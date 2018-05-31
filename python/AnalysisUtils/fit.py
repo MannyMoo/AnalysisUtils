@@ -1,8 +1,8 @@
 '''Functions for building fit PDFs. Everything is built via the workspace.'''
 
 import ROOT
-from TemplateAnalysis.variables import variables
-from TemplateAnalysis.workspace import workspace, get_variable, get_component
+from AnalysisUtils.variables import variables
+from AnalysisUtils.workspace import workspace, get_variable, get_component
 
 def roovar(name, title = None, val = None, xmin = None, xmax = None, unit = None, error = None) :
     '''Make a RooRealVar with the given attributes. If a variable of the same name is defined

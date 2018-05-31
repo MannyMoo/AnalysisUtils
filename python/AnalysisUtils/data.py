@@ -5,7 +5,7 @@ from CharmBaryonLifetimes.makeroodataset import make_roodataset
 from CharmBaryonLifetimes.variables import variables
 from array import array
 
-datadir = os.environ.get('TEMPLATEANALYSISDATADIR', 
+datadir = os.environ.get('ANALYSISUTILSDATADIR', 
                          'root://eoslhcb.cern.ch//eos/lhcb/user/u/user/data/')
 
 def make_chain(treename, *fnames) :

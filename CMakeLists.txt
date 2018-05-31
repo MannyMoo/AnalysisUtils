@@ -1,7 +1,7 @@
 ################################################################################
-# Package: TemplateAnalysis
+# Package: AnalysisUtils
 ################################################################################
-gaudi_subdir(TemplateAnalysis v0r1)
+gaudi_subdir(AnalysisUtils v0r1)
 
 gaudi_depends_on_subdirs(GaudiConfUtils)
 
@@ -15,19 +15,19 @@ find_package(ROOT COMPONENTS Core RIO Hist Graf Graf3d Postscript Gpad
 # set(ROOT_genreflex_CMD ${env_cmd} --xml ${env_xml} ${ROOT_genreflex_CMD})
 
 include_directories(${Boost_INCLUDE_DIRS} ${ROOT_INCLUDE_DIRS})
-# gaudi_add_dictionary(TemplateAnalysis
-#                      dict/TemplateAnalysisDict.h dict/TemplateAnalysisDict.xml
+# gaudi_add_dictionary(AnalysisUtils
+#                      dict/AnalysisUtilsDict.h dict/AnalysisUtilsDict.xml
 #                      SPLIT_CLASSDEF)
 
-# gaudi_add_library(TemplateAnalysisLib
+# gaudi_add_library(AnalysisUtilsLib
 #                   src/*.cpp
-#                   TemplateAnalysisDict_classdef.cpp
-#                   PUBLIC_HEADERS TemplateAnalysis
+#                   AnalysisUtilsDict_classdef.cpp
+#                   PUBLIC_HEADERS AnalysisUtils
 #                   INCLUDE_DIRS Boost ROOT
 #                   LINK_LIBRARIES Boost ROOT)
 
 # # ensure that genreflex is not called twice (in parallel builds)
-# add_dependencies(TemplateAnalysisLib TemplateAnalysisGen)
+# add_dependencies(AnalysisUtilsLib AnalysisUtilsGen)
 
 gaudi_install_python_modules()
 
