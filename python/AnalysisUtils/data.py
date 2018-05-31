@@ -1,12 +1,8 @@
 '''Functions to access all the relevant datasets for the analysis, both TTrees and RooDataSets.'''
 
 import os, ROOT, pprint
-from CharmBaryonLifetimes.makeroodataset import make_roodataset
-from CharmBaryonLifetimes.variables import variables
+from AnalysisUtils.makeroodataset import make_roodataset
 from array import array
-
-datadir = os.environ.get('ANALYSISUTILSDATADIR', 
-                         'root://eoslhcb.cern.ch//eos/lhcb/user/u/user/data/')
 
 def make_chain(treename, *fnames) :
     '''Make a TChain from a tree name and a list of file names.'''
@@ -15,23 +11,19 @@ def make_chain(treename, *fnames) :
         chain.Add(fname)
     return chain
 
-# All the TTree datasets, the tree names and file names (any number of file names can be given).
-datapaths = {'LTUNB_Lc_2015' : ('XcTopKpiTuple/DecayTree', os.path.join(datadir, 'Lc_2015.root')),
-             }
-
-def get_data(name) :
+def get_data(datapaths, name) :
     '''Get the dataset of the given name.'''
     try :
         return make_chain(*datapaths[name])
     except KeyError :
         raise ValueError('Unknown data type: ' + repr(name))
 
-def dataset_file_name(dataname) :
+def dataset_file_name(datapaths, dataname) :
     '''Get the name of the file containing the RooDataset corresponding to the given
     dataset name.'''
     return os.path.join(os.path.dirname(datapaths[dataname][1]), dataname + '_Dataset.root')
 
-def get_dataset(dataname, varnames = ('mass', 'decaytime', 'XcIPX', 'XcIPY'), update = False) :
+def get_dataset(dataname, variables, varnames, update = False) :
     '''Get the RooDataSet of the given name. It's created/updated on demand. varnames is the 
     set of variables to be included in the RooDataSet. They must correspond to those defined 
     in the variables module. If the list of varnames changes or if update = True the 
@@ -58,12 +50,14 @@ def get_dataset(dataname, varnames = ('mass', 'decaytime', 'XcIPX', 'XcIPY'), up
     fout.Close()
     return dataset
 
-# Define getter methods for every TTree dataset and corresponding RooDataSet.
-for name in datapaths :
-    globals()[name] = eval('lambda : get_data({0!r})'.format(name))
-    globals()[name + '_Dataset'] = eval('lambda : get_dataset({0!r})'.format(name))
+def make_getters(namespace, datapaths) :
+    '''Define getter methods for every TTree dataset and corresponding RooDataSet.'''
+    for name in datapaths :
+        namespace[name] = eval('lambda : get_data({0!r})'.format(name))
+        namespace[name + '_Dataset'] = eval('lambda : get_dataset({0!r})'.format(name))
 
 def identifier(tree, i, *branches) :
+    '''Get an identifier for entry i in the tree using the given branch names.'''
     vals = []
     for branch in branches :
         tree.GetBranch(branch).GetEntry(i)
