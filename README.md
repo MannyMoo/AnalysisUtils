@@ -1,4 +1,4 @@
-# Template analysis structure in the LHCb software structure
+# Utilities for performing analyses
 
 The code is organised as an LHCb CMake project, so you can build & run it in an LHCb application. Eg,
 
@@ -15,10 +15,6 @@ Currently everything is just python and only depends on ROOT, so if you have ROO
 
 # Directory structure
 
-## options
-
-Python LFN datasets & ntupling options.
-
 ## python/AnalysisUtils
 
 Shared python modules for core functionality, eg, accessing ntuples/RooDataSets, building fit models, plotting utils.
@@ -26,7 +22,3 @@ Shared python modules for core functionality, eg, accessing ntuples/RooDataSets,
 ## scripts
 
 Scripts containing main code for the analysis. These should be fairly minimal with all the functionality living in `python/AnalysisUtils`.
-
-## tmva
-
-Where to keep the output of TMVA trainings (.root and .xml files).
