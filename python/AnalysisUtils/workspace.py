@@ -1,7 +1,6 @@
 '''Python wrapper for a RooWorkspace. The workspace should be used to create 
 all RooVars and RooPDFs to avoid any memory leak/ownership issues.'''
 
-from CharmBaryonLifetimes.data import datadir
 import os, ROOT, re
 from ROOT import TFile
 
@@ -39,7 +38,17 @@ class Workspace(object) :
             self.workspace.Write(self.workspace.GetName(), Workspace._writedelete)
             self._file.Close()
 
-    def roovar(self, name, title = None, val = None, xmin = None, xmax = None, unit = None, error = None, discrete = False) :
+    def roovar(self, name, title = None, val = None, xmin = None, xmax = None, unit = None, error = None, discrete = False,
+               variables = None) :
+        '''Make a RooRealVar with the given attributes. If a variable of the same name is defined
+        in the variables dict then the title, xmin, xmax and unit are taken from there.'''
+
+        if variables and name in variables :
+            title = variables[name]['title']
+            xmin = variables[name]['xmin']
+            xmax = variables[name]['xmax']
+            unit = variables[name].get('unit', '')
+
         if not discrete :
             if self.workspace.var(name) :
                 var = self.workspace.var(name)
@@ -124,10 +133,3 @@ def get_component(pdf, ident) :
 
 def get_variable(pdf, ident) :
     return findarg(pdf.getVariables(), ident)
-
-# Giving everything a unique name is a pain, so don't bother persisting
-# between sessions.
-#workspacefilename = os.path.join(datadir, 'workspace.root')
-workspace = Workspace('workspace', 
-                      #workspacefilename,
-                      )
