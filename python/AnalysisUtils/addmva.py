@@ -2,25 +2,7 @@ from xml.etree import ElementTree
 from argparse import ArgumentParser
 import ROOT
 from array import array
-
-class TreeFormula(object) :
-    __slots__ = ('formula', 'tree', 'ttform')
-
-    def __init__(self, formula, tree) :
-        self.formula = formula
-        self.tree = tree
-        self.ttform = ROOT.TTreeFormula(formula, formula, tree)
-
-    def get_entry(self, i) :
-        self.tree.LoadTree(i)
-        self.ttform.GetNdata()
-
-    def evaluate(self) :
-        return self.ttform.EvalInstance()
-
-    def evaluate_entry(self, i) :
-        self.get_entry(i)
-        return self.evaluate()
+from AnalysisUtils.treeutils import TreeFormula
 
 def main() :
     ROOT.gROOT.SetBatch(True)
@@ -57,7 +39,7 @@ def main() :
 
         #treetype = inputtree.GetBranch(form).GetLeaf(form).GetTypeName()
         #treevararrays[form] = array(treetype[0].lower(), [0])
-        treevars[form] = TreeFormula(form, inputtree)
+        treevars[form] = TreeFormula(form, form, inputtree)
         #inputtree.SetBranchAddress(form, treevararrays[form])
 
     spectatorvars = weightsroot.findall('Spectators')[0].findall('Spectator')
@@ -83,12 +65,12 @@ def main() :
         args.maxentries = inputtree.GetEntries()
 
     for i in xrange(min(args.maxentries, inputtree.GetEntries())) :
-        #inputtree.GetEntry(i)
+        inputtree.LoadTree(i)
         #for key, treeval in treevararrays.iteritems() :
         #    for j in xrange(len(treeval)) :
         #        tmvavararrays[key][j] = treeval[j]
         for key, treeval in treevars.iteritems() :
-            tmvavararrays[key][0] = treeval.evaluate_entry(i)
+            tmvavararrays[key][0] = treeval()
 
         mvavar[0] = reader.EvaluateMVA(args.weightsvar)
         outputtree.Fill()

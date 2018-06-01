@@ -3,28 +3,7 @@
 '''Functionality needed to make a RooDataSet from a TTree.'''
 
 import ROOT
-
-class TreeFormula(object) :
-    '''Wrapper for TTreeFormula, so it can just be called and return the value of the formula.
-    Works for TTrees and TChains.'''
-
-    chainformulae = {}
-
-    def __init__(self, name, formula, tree) :
-        self.form = ROOT.TTreeFormula(name, formula, tree)
-        if isinstance(tree, ROOT.TChain) :
-            chainid = id(tree)
-            if not chainid in TreeFormula.chainformulae :
-                formarr = ROOT.TObjArray()
-                TreeFormula.chainformulae[chainid] = formarr
-                tree.SetNotify(formarr)
-            else :
-                formarr = TreeFormula.chainformulae[chainid]
-            formarr.Add(self.form)
-
-    def __call__(self, tree = None) :
-        self.form.GetNdata()
-        return self.form.EvalInstance()        
+from AnalysisUtils.treeutils import TreeFormula
 
 class TreeVar(object) :
     '''Proxy class between a variable, or function of variables, in a TTree and a RooRealVar.'''
