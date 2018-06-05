@@ -7,7 +7,8 @@ from ROOT import TFile
 class Workspace(object) :
     '''Wrapper around a RooWorkspace so it's loaded and saved from a TFile on demand.'''
 
-    __slots__ = ('_file', 'workspace', 'variables') + tuple(filter(lambda attr : ' ' not in attr and not attr.startswith('_'),
+    _ownslots = ('_file', 'workspace', 'variables')
+    __slots__ = _ownslots + tuple(filter(lambda attr : ' ' not in attr and not attr.startswith('_'),
                                                                    dir(ROOT.RooWorkspace)))
     _writedelete = int(ROOT.TObject.kWriteDelete)
 
@@ -28,7 +29,7 @@ class Workspace(object) :
                 self._file.Close()
         if not self.workspace :
             self.workspace = ROOT.RooWorkspace(name)
-        for attr in self.__slots__[2:] :
+        for attr in self.__slots__[len(Workspace._ownslots):] :
             if attr in ('factory',) :
                 continue
             setattr(self, attr, getattr(self.workspace, attr))

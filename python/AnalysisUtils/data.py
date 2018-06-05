@@ -58,4 +58,4 @@ class DataLibrary(object) :
         '''Define getter methods for every TTree dataset and corresponding RooDataSet.'''
         for name in self.datapaths :
             setattr(self, name, eval('lambda : get_data({0!r})'.format(name)))
-            setattr(self, name + '_Dataset', = eval('lambda : get_dataset({0!r})'.format(name)))
+            setattr(self, name + '_Dataset', eval('lambda : get_dataset({0!r})'.format(name)))
