@@ -6,6 +6,16 @@ from AnalysisUtils.treeutils import make_chain
 from array import array
 
 class DataLibrary(object) :
+    '''Contains info on datasets and functions to retrieve them.'''
+
+    class DataGetter(object) :
+        '''Simple wrapper for dynamic construction of callables to retrieve datasets.'''
+        def __init__(self, method, *args) :
+            self.method = method
+            self.args = args
+        
+        def __call__(self) :
+            return self.method(*self.args)
 
     def __init__(self, datapaths, variables, varnames = ()) :
         self.datapaths = datapaths
@@ -57,5 +67,5 @@ class DataLibrary(object) :
     def make_getters(self) :
         '''Define getter methods for every TTree dataset and corresponding RooDataSet.'''
         for name in self.datapaths :
-            setattr(self, name, eval('lambda : get_data({0!r})'.format(name)))
-            setattr(self, name + '_Dataset', eval('lambda : get_dataset({0!r})'.format(name)))
+            setattr(self, name, DataLibrary.DataGetter(self.get_data, name))
+            setattr(self, name + '_Dataset', DataLibrary.DataGetter(self.get_dataset, name))
