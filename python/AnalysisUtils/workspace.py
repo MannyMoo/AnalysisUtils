@@ -7,13 +7,15 @@ from ROOT import TFile
 class Workspace(object) :
     '''Wrapper around a RooWorkspace so it's loaded and saved from a TFile on demand.'''
 
-    __slots__ = ('_file', 'workspace',) + tuple(filter(lambda attr : ' ' not in attr and not attr.startswith('_'),
-                                                       dir(ROOT.RooWorkspace)))
+    __slots__ = ('_file', 'workspace', 'variables') + tuple(filter(lambda attr : ' ' not in attr and not attr.startswith('_'),
+                                                                   dir(ROOT.RooWorkspace)))
     _writedelete = int(ROOT.TObject.kWriteDelete)
 
-    def __init__(self, name, fname = None) :
+    def __init__(self, name, fname = None, variables = {}) :
         self.workspace = None
         self._file = None
+        self.variables = dict(variables)
+
         if fname :
             print 'Load workspace from', fname
             self._file = TFile.Open(fname)
@@ -38,16 +40,15 @@ class Workspace(object) :
             self.workspace.Write(self.workspace.GetName(), Workspace._writedelete)
             self._file.Close()
 
-    def roovar(self, name, title = None, val = None, xmin = None, xmax = None, unit = None, error = None, discrete = False,
-               variables = None) :
+    def roovar(self, name, title = None, val = None, xmin = None, xmax = None, unit = None, error = None, discrete = False) :
         '''Make a RooRealVar with the given attributes. If a variable of the same name is defined
         in the variables dict then the title, xmin, xmax and unit are taken from there.'''
 
-        if variables and name in variables :
-            title = variables[name]['title']
-            xmin = variables[name]['xmin']
-            xmax = variables[name]['xmax']
-            unit = variables[name].get('unit', '')
+        if self.variables and name in self.variables :
+            title = self.variables[name]['title']
+            xmin = self.variables[name]['xmin']
+            xmax = self.variables[name]['xmax']
+            unit = self.variables[name].get('unit', '')
 
         if not discrete :
             if self.workspace.var(name) :
@@ -88,6 +89,14 @@ class Workspace(object) :
         if None != title :
             var.SetTitle(title)
         return var
+
+    def var_title(self, varname) :
+        '''Get the title string including the unit for a variable.'''
+        var = self.roovar(varname)
+        if var.getUnit() :
+            return var.GetTitle() + ' [' + var.getUnit() + ']'
+        return var.GetTitle()
+
                     
     def factory(self, expr, *args) :
         if args :
