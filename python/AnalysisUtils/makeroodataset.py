@@ -120,7 +120,7 @@ def main() :
     '''Read the input file, etc, from the commandline and build the RooDataSet. 
     Variables to be read into the RooDataSet are passed as additional commandline
     arguments. Arguments should be the title, formula, xmin & xmax, & optionally the unit, eg:
-    --mass lab0_M 'B mass' 5200 5800 MeV --decaytime 'lab0_TAU * 1000.' 'B decay time' 0. 10. ps'''
+    --mass 'B mass' lab0_M 5200 5800 MeV --decaytime 'B decay time' 'lab0_TAU * 1000.' 0. 10. ps'''
 
     import argparse
     from argparse import ArgumentParser
@@ -149,7 +149,7 @@ def main() :
         if not len(varargs) in (4, 5) :
             err = '''Invalid number of arguments for variable {0!r}: {1!r}
 Arguments should be the title, formula, xmin & xmax, & optionally the unit, eg:
---mass lab0_M 'B mass' 5200 5800 MeV --decaytime 'lab0_TAU * 1000.' 'B decay time' 0. 10. ps'''.format(var, varargs)
+--mass 'B mass' lab0_M 5200 5800 MeV --decaytime 'B decay time' 'lab0_TAU * 1000.' 0. 10. ps'''.format(var, varargs)
             raise ValueError(err)
         try :
             varargs[2] = float(varargs[2])
