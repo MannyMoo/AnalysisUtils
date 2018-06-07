@@ -127,6 +127,10 @@ class TreeFormula(object) :
                 formarr = TreeFormula.chainformulae[chainid]
             formarr.Add(self.form)
 
+    def is_ok(self) :
+        '''Check that the formula compiles.'''
+        return self.form.Compile() == 0
+
     def __call__(self, tree = None) :
         self.form.GetNdata()
         return self.form.EvalInstance()        
