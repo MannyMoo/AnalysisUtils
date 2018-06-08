@@ -68,7 +68,7 @@ def make_roodataset(dataname, datatitle, tree, nentries = -1, selection = '',
     make_roodataset('massdata', 'massdata', tree, 
                     mass = {'title' : 'B mass','formula' : 'lab0_M', 'xmin' : 5200, 'xmax', 5800, 'unit' : 'MeV'})'''
 
-    print 'Constructing RooDataSet from TTree', tree.GetName()
+    print 'Constructing RooDataSet from TTree', tree.GetName(), 'in file', tree.GetFile().GetName()
     rooargs = ROOT.RooArgSet()
     treevars = []
     print 'Variables:'
@@ -113,6 +113,8 @@ def make_roodataset(dataname, datatitle, tree, nentries = -1, selection = '',
         inrange = True
         for var in treevars :
             var.set_var()
+            #if i < 10 :
+            #    print var.formula, var.is_in_range(), var.form(tree), var.value, var.var.getVal()
             if not var.is_in_range() :
                 inrange = False
                 noutofrange += 1

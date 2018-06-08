@@ -49,7 +49,7 @@ class DataLibrary(object) :
             if fout :
                 dataset = fout.Get(dataname)
                 cand = dataset.get(0)
-                if set(varnames) == set(cand.contentsString().split(',')) :
+                if dataset and cand and set(varnames) == set(cand.contentsString().split(',')) :
                     fout.Close()
                     return dataset
                 fout.Close()

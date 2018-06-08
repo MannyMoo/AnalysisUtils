@@ -117,6 +117,9 @@ class TreeFormula(object) :
 
     def __init__(self, name, formula, tree) :
         self.form = ROOT.TTreeFormula(name, formula, tree)
+        # Calling Compile sometimes breaks the TTreeFormula, for reasons unknown, so
+        # use a disposable instance to check compilation.
+        self.ok = (ROOT.TTreeFormula(name, formula, tree).Compile() == 0)
         if isinstance(tree, ROOT.TChain) :
             chainid = id(tree)
             if not chainid in TreeFormula.chainformulae :
@@ -129,7 +132,7 @@ class TreeFormula(object) :
 
     def is_ok(self) :
         '''Check that the formula compiles.'''
-        return self.form.Compile() == 0
+        return self.ok
 
     def __call__(self, tree = None) :
         self.form.GetNdata()
