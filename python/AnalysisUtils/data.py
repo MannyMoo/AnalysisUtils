@@ -17,10 +17,11 @@ class DataLibrary(object) :
         def __call__(self) :
             return self.method(*self.args)
 
-    def __init__(self, datapaths, variables, ignorecompilefails = False, varnames = ()) :
+    def __init__(self, datapaths, variables, ignorecompilefails = False, selection = None, varnames = ()) :
         self.datapaths = datapaths
         self.variables = variables
         self.varnames = varnames
+        self.selection = selection
         self.make_getters()
 
     def get_data(self, name) :
@@ -56,6 +57,7 @@ class DataLibrary(object) :
         tree = self.get_data(dataname)
         dataset = make_roodataset(dataname, dataname, tree,
                                   ignorecompilefails = self.ignorecompilefails,
+                                  selection = self.selection,
                                   **dict((var, self.variables[var]) for var in varnames))
 
         fname = self.dataset_file_name(dataname)
