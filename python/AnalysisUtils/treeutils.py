@@ -97,11 +97,11 @@ def merge_trees(outputfile, tree1, tree2, *trees) :
 
 def merge_trees_to_file(outputfname, tree1Names, tree2Names, *treeNames) :
     '''Create the file then merge the TTrees into it.'''
-    outfile = TFile.Open(outputfname, 'recreate')
+    outfile = ROOT.TFile.Open(outputfname, 'recreate')
     trees = []
     files = []
     for fname, treename in (tree1Names, tree2Names) + treeNames :
-        f = TFile.Open(fname)
+        f = ROOT.TFile.Open(fname)
         trees.append(f.Get(treename))
         files.append(f)
     merge_trees(outfile, *trees)
