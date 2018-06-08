@@ -21,6 +21,7 @@ class DataLibrary(object) :
         self.datapaths = datapaths
         self.variables = variables
         self.varnames = varnames
+        self.ignorecompilefails = ignorecompilefails
         self.make_getters()
 
     def get_data(self, name) :
