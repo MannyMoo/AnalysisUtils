@@ -68,7 +68,7 @@ def make_roodataset(dataname, datatitle, tree, nentries = -1, selection = '',
     make_roodataset('massdata', 'massdata', tree, 
                     mass = {'title' : 'B mass','formula' : 'lab0_M', 'xmin' : 5200, 'xmax', 5800, 'unit' : 'MeV'})'''
 
-    print 'Constructing RooDataSet from TTree', tree.GetName(), 'in file', tree.GetFile().GetName()
+    print 'Constructing RooDataSet from TTree', tree.GetName()
     rooargs = ROOT.RooArgSet()
     treevars = []
     print 'Variables:'
