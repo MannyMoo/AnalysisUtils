@@ -22,6 +22,7 @@ class DataLibrary(object) :
         self.variables = variables
         self.varnames = varnames
         self.selection = selection
+        self.ignorecompilefails = ignorecompilefails
         self.make_getters()
 
     def get_data(self, name) :
