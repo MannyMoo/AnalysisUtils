@@ -54,7 +54,8 @@ class TreeVar(object) :
     def __str__(self) :
         return self._str()
                                                                       
-def make_roodataset(dataname, datatitle, tree, nentries = -1, selection = '', **variables) :
+def make_roodataset(dataname, datatitle, tree, nentries = -1, selection = '', 
+                    ignorecompilefails = False, **variables) :
     '''dataname: name of the RooDataSet to be made.
     datatitle: title of the RooDataSet.
     tree: TTree to take the data from.
@@ -71,12 +72,22 @@ def make_roodataset(dataname, datatitle, tree, nentries = -1, selection = '', **
     rooargs = ROOT.RooArgSet()
     treevars = []
     print 'Variables:'
+    skippedvars = []
     for var, args in variables.items() :
         treevar = TreeVar(tree, var, **args)
+        if not treevar.form.is_ok() :
+            if ignorecompilefails :
+                skippedvars.append(treevar)
+                continue
+            raise ValueError('Variable doesn\'t compile:\n' + str(treevar))
         print treevar
         treevars.append(treevar)
         rooargs.add(treevar.var)
-    
+    if skippedvars :
+        print 'Variables that don\'t compile and were skipped:'
+        for treevar in skippedvars :
+            print treevar
+
     if selection :
         print 'Applying selection', repr(selection)
         selvar = TreeFormula('selection', selection, tree)
