@@ -73,3 +73,28 @@ class DataLibrary(object) :
         for name in self.datapaths :
             setattr(self, name, DataLibrary.DataGetter(self.get_data, name))
             setattr(self, name + '_Dataset', DataLibrary.DataGetter(self.get_dataset, name))
+
+    def draw(self, tree, variable, hname = None, nbins = None, xmin = None, xmax = None, selection = None) :
+        '''Make a histogram of a variable. If 'tree' is a string, the dataset with the corresponding name
+        is retrieved, else it's expected to be a TTree. If 'variable' is the name of a variable in the internal
+        dict of variables, then its formula is taken from there, else it's expected to be a formula understood
+        by the TTree. Similarly for xmin & xmax. Default nbins is 100. The default selection is the internal
+        selection given to the constructor.'''
+
+        if isinstance(tree, str) :
+            tree = self.get_data(tree)
+        nbins = nbins if nbins else 100
+        hname = hname if hname else variable
+        if not selection :
+            selection = self.selection if self.selection else ''
+        if variable in self.variables :
+            form = self.variables[variable]['formula']
+            xmin = xmin if xmin != None else self.variables[variable]['xmin']
+            xmax = xmax if xmax != None else self.variables[variable]['xmax']
+        else :
+            form = variable
+            if xmin == None or xmax == None :
+                raise ValueError('Must give xmin and xmax for variables not in the known variables!')
+        h = ROOT.TH1F(hname, '', nbins, xmin, xmax)
+        tree.Draw('{form} >> {hname}'.format(**locals()), selection)
+        return h
