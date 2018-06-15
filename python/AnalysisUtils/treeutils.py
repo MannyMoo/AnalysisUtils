@@ -138,3 +138,16 @@ class TreeFormula(object) :
         self.form.GetNdata()
         return self.form.EvalInstance()        
 
+def rename_branches(tree, *replacements) :
+    '''Rename branches in a TTree. 'replacements' should be pairs of (pattern, replacement).
+    If 'pattern' is in the branch name, it's replaced with 'replacement'. It just does a 
+    simple search and replace (not, eg, regex).'''
+
+    for branch in tree.GetListOfBranches() :
+        for pattern, replacement in replacements :
+            if not pattern in branch.GetName() :
+                continue
+            leaf = tree.GetLeaf(branch.GetName())
+            for thing in branch, leaf :
+                thing.SetNameTitle(thing.GetName().replace(pattern, replacement),
+                                   thing.GetTitle().replace(pattern, replacement))
