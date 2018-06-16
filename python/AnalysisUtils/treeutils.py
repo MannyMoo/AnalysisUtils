@@ -1,6 +1,8 @@
 '''Functions for working with TTrees.'''
 
 import ROOT
+from array import array
+import pprint
 
 def make_chain(treename, *fnames) :
     '''Make a TChain from a tree name and a list of file names.'''
@@ -23,16 +25,17 @@ def identifier(tree, i, *branches) :
 
 def match_trees(inputtree, extratree, outputfile, *branches) :
     '''Add extra branches in extratree to a copy of inputtree, using the values of the branches 
-    in 'branches' to match entries between the two. Every entry in inputtree must have a 
-    corresponding entry in extratree.
-
-    Doesn't currently work for array type branches with variable lengths, but could be made to do so.'''
+    in 'branches' to match entries between the two. If an entry in inputtree doesn't have a 
+    matching entry in extratree all the extra branches are filled with -999999.'''
 
     print 'Get entry identifiers from tree', extratree.GetName()
     # This has the disadvantage of requiring all the identifiers to be in memory.
     extramap = {identifier(extratree, i, *branches) : i for i in xrange(extratree.GetEntries())}
+    if len(extramap) != extratree.GetEntries() :
+        raise ValueError('Identifiers aren\'t unique! Using branches {0!r} gives {1} unique \
+identifiers out of {2} entries.'.format(branches, len(extramap), extratree.GetEntries()))
     if isinstance(outputfile, str) :
-        outputfile = ROOT.TFile.Open(outputfname, 'recreate')
+        outputfile = ROOT.TFile.Open(outputfile, 'recreate')
     outputfile.cd()
     print 'Copy tree', inputtree.GetName()
     outputtree = inputtree.CopyTree('')
@@ -43,11 +46,14 @@ def match_trees(inputtree, extratree, outputfile, *branches) :
         if branch.GetName() in inputtreebranches :
             continue
         branchtype = branch.GetTitle().split('/')[-1].lower()
-        if branchtype == 'o' :
+        if branchtype in 'os' :
             branchtype = 'i'
         leaf = extratree.GetLeaf(branch.GetName())
+        leaflen = leaf.GetLen()
+        if leaf.GetLeafCount() :
+            leaflen = leaf.GetLeafCount().GetMaximum()
         try :
-            vals = array(branchtype, [0] * leaf.GetLen())
+            vals = array(branchtype, [0] * leaflen)
         except ValueError :
             print branch.GetTitle()
             raise
@@ -69,7 +75,7 @@ def match_trees(inputtree, extratree, outputfile, *branches) :
                 newbranch.Fill()
         except KeyError :
             nunmatched += 1
-            unmatchedids.append(ident)
+            unmatchedids.append((i, ident))
             for newbranch, vals, branch, leaf in newbranches :
                 for k in xrange(leaf.GetLen()) :
                     vals[k] = types[vals.typecode](-999999.)
