@@ -1,51 +1,68 @@
 #!/usr/bin/env python
-# =============================================================================
-# $Id: PartPropSvc.py,v 1.3 2008-12-03 17:35:54 ibelyaev Exp $ 
-# =============================================================================
-## @file PartProp/PartPropSvc.py
-#  Demo-file for interactive work with new Particle Property Service
-#  @author Vanya BELYAEV Ivan.Belyaev@nikhef.nl
-#  @date 2010-10-22
-# =============================================================================
-"""
 
-Trivial script to dump the table of Particle Properties 
+'''Get info on a particle from the ParticePropertySvc.'''
 
-Last modification $Date$
-               by $Author$
-"""
-# =============================================================================
-__author__  = "Vanya BELYAEV Ivan.Belyaev@nikhef.nl"
-__version__ = "version $Revision: 1.3 $" 
-# =============================================================================
-import PartProp.PartPropAlg
-import PartProp.Service
-from   GaudiPython.Bindings import AppMgr
-import sys
+pps = None
 
-# =============================================================================
+def initialise(dddbtag = '') :
+    global pps
+    if pps :
+        return
+    import PartProp.PartPropAlg
+    import PartProp.Service
+    from   GaudiPython.Bindings import AppMgr
+    import sys
+    from Configurables import LHCbApp
 
-gaudi = AppMgr()
+    if dddbtag :
+        LHCbApp().DDDBtag = dddbtag
 
-# Annoyingly have to initialise the AppMgr to initialise the ppSvc
-gaudi.initialize()
+    gaudi = AppMgr()
 
-pps   = gaudi.ppSvc()
+    # Annoyingly have to initialise the AppMgr to initialise the ppSvc
+    gaudi.initialize()
 
-#print pps.all()
-for pname in sys.argv[1:] :
+    pps   = gaudi.ppSvc()
+
+def print_info(pname, dddbtag = '') :
+
+    initialise(dddbtag)
+
+    # See if it's an int ID.
     try :
         pname = int(pname)
-        
     except ValueError :
         pass
     part = pps.find(pname)
     if part != None :
-        print part
+        print part, ', tau:', part.lifetime()*1000., 'ps'
     else :
         print "Couldn't find particle named {0!r}".format(pname)
     print
 
-# =============================================================================
-# The END 
-# =============================================================================
+def print_all(dddbtag = '') :
+    initialise(dddbtag)
+    print pps.all()
+
+def main() :
+    from argparse import ArgumentParser
+
+    argparser = ArgumentParser()
+    argparser.add_argument('--dddbtag', default = '',
+                           help = 'DDDB tag to use. Note that the DDDB contains ParticleTable.txt so it\'s\
+important to use the correct tag.')
+    argparser.add_argument('--all', action = 'store_true',
+                           help = 'Print the full particle table.')
+    argparser.add_argument('particles', nargs = '*',
+                           help = 'Names or IDs of particles to print')
+
+    args = argparser.parse_args()
+
+    if args.all :
+        print_all(args.dddbtag)
+    
+    for partname in args.particles :
+        print_info(partname, args.dddbtag)
+
+if __name__ == '__main__' :
+    main()
