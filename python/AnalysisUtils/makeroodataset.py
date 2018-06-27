@@ -173,7 +173,6 @@ Arguments should be the title, formula, xmin & xmax, & optionally the unit, eg:
             raise ValueError(err)
         variables[var] = dict(zip(argnames, varargs))
     
-    fin = ROOT.TFile.Open(args.inputfile)
     tree = make_chain(args.inputtree, *args.inputfiles)
 
     fout = ROOT.TFile.Open(args.outputfile, 'recreate')
