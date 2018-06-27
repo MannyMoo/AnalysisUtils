@@ -3,7 +3,7 @@
 '''Functionality needed to make a RooDataSet from a TTree.'''
 
 import ROOT
-from AnalysisUtils.treeutils import TreeFormula
+from AnalysisUtils.treeutils import TreeFormula, make_chain
 
 class TreeVar(object) :
     '''Proxy class between a variable, or function of variables, in a TTree and a RooRealVar.'''
@@ -139,7 +139,7 @@ def main() :
     from argparse import ArgumentParser
     
     argparser = ArgumentParser()
-    argparser.add_argument('--inputfile', help = 'Name of the input file.')
+    argparser.add_argument('--inputfiles', nargs = '+', help = 'Name of the input file(s).')
     argparser.add_argument('--inputtree', help = 'Name of the TTree in the input file.')
     argparser.add_argument('--outputfile', help = 'Name of the output file.')
     argparser.add_argument('--datasetname', help = 'Name of the RooDataSet to be made.')
@@ -174,7 +174,7 @@ Arguments should be the title, formula, xmin & xmax, & optionally the unit, eg:
         variables[var] = dict(zip(argnames, varargs))
     
     fin = ROOT.TFile.Open(args.inputfile)
-    tree = fin.Get(args.inputtree)
+    tree = make_chain(args.inputtree, *args.inputfiles)
 
     fout = ROOT.TFile.Open(args.outputfile, 'recreate')
     dataset = make_roodataset(args.datasetname, args.datasettitle, tree,
