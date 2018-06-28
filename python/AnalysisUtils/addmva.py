@@ -20,7 +20,7 @@ def main() :
     inputfile = ROOT.TFile.Open(args.inputfile)
     inputtree = inputfile.Get(args.inputtree)
     if not inputtree :
-        raise Exception("File {0!r} doesn't contain a TTree called {1!r}!".format(args.inputfile, args.inputtree)
+        raise Exception("File {0!r} doesn't contain a TTree called {1!r}!".format(args.inputfile, args.inputtree))
 
     weightstree = ElementTree.parse(args.weightsfile)
     weightsroot = weightstree.getroot()
