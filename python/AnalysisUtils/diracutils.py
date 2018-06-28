@@ -1,14 +1,22 @@
 import subprocess, re, pprint
 from collections import defaultdict
 
-def dirac_call(*args) :
+def dirac_call(*args, **kwargs) :
     '''Call something in the LHCbDirac environment and capture the stdout, stderr
-    and exit code.'''
+    and exit code. By default an exception is raised if the exit code of the call
+    isn't zero. This can be overridden by passing raiseonfailure = False.'''
 
     proc = subprocess.Popen(('lb-run', 'LHCbDirac/prod') + args,
                             stdout = subprocess.PIPE, stderr = subprocess.PIPE)
     stdout, stderr = proc.communicate()
     exitcode = proc.poll()
+    if 0 != exitcode and kwargs.get('raiseonfailure', True) :
+        raise OSError('''Call to {0!r} failed!
+stdout:
+'''.format(' '.join(args)) + returnval['stdout'] + '''
+stderr:
+''' + returnval['stderr'])
+    
     return {'stdout' : stdout, 'stderr' : stderr, 'exitcode' : exitcode}
 
 def get_bk_decay_paths(evttype, exclusions = (), outputfile = None) :
@@ -17,12 +25,6 @@ def get_bk_decay_paths(evttype, exclusions = (), outputfile = None) :
     'outputfile' is given, the return dict is written to that file.'''
 
     returnval = dirac_call('dirac-bookkeeping-decays-path', str(evttype))
-    if returnval['exitcode'] != 0 :
-        raise OSError('''Call to dirac-bookkeeping-decays-path failed!
-stdout:
-''' + returnval['stdout'] + '''
-stderr:
-''' + returnval['stderr'])
     paths = [p[0] for p in eval('[' + returnval['stdout'].replace('\n', ',') + ']')]
     paths = filter(lambda p : not any(re.search(excl, p) for excl in exclusions), paths)
     pathsdict = defaultdict(set)
@@ -37,3 +39,29 @@ decaypaths = \\
 {2}
 '''.format(evttype, exclusions, pprint.pformat(pathsdict)))
     return pathsdict
+
+def get_lfns(*args, **kwargs) :
+    '''Get the LFNs from the given BK query. If the keyword arg 'outputfile' is given,
+    the LFNs are saved as an LHCb dataset to that file.'''
+    
+    result = dirac_call('dirac-bookkeeping-get-files', *args)
+    lfns = filter(lambda line : line.startswith('/lhcb'), result['stdout'].splitlines())
+    lfns = [lfn.split()[0] for lfn in lfns]
+    if not kwargs.get('outputfile', None) :
+        return lfns
+    with open(kwargs['outputfile'], 'w') as f :
+        f.write('''# lb-run LHCbDirac/prod dirac-bookkeeping-get-files {0}
+
+from Gaudi.Configuration import *
+from GaudiConf import IOHelper
+IOHelper('ROOT').inputFiles(
+{1}
+clear=True)
+'''.format(' '.join(args), pprint.pformat(['LFN:' + lfn for lfn in lfns])))
+        
+    return lfns
+
+def get_lfns_from_path(path, outputfile = None) :
+    '''Get the LFNs from the given BK path.'''
+    return get_lfns('-B', path, outputfile = outputfile)
+                
