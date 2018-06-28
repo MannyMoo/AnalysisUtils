@@ -55,7 +55,7 @@ def get_lfns(*args, **kwargs) :
 from Gaudi.Configuration import *
 from GaudiConf import IOHelper
 IOHelper('ROOT').inputFiles(
-{1}
+{1},
 clear=True)
 '''.format(' '.join(args), pprint.pformat(['LFN:' + lfn for lfn in lfns])))
         
