@@ -147,6 +147,8 @@ def main() :
     argparser.add_argument('--selection', nargs = '?', default = '', help = 'Selection to apply to the TTree.')
     argparser.add_argument('--nentries', nargs = '?', type = int, default = -1, 
                            help = 'Number of entries to read from the TTree')
+    argparser.add_argument('--friendfiles', nargs = '*', help = 'Input files for the friend TTree.')
+    argparser.add_argument('--friendtree', help = 'Name of the friend TTree')
     
     args, remainder = argparser.parse_known_args()
     variableslists = {}
@@ -174,6 +176,9 @@ Arguments should be the title, formula, xmin & xmax, & optionally the unit, eg:
         variables[var] = dict(zip(argnames, varargs))
     
     tree = make_chain(args.inputtree, *args.inputfiles)
+    if args.friendtree :
+        friendtree = make_chain(args.friendtree, *args.friendfiles)
+        tree.AddFriend(friendtree)
 
     fout = ROOT.TFile.Open(args.outputfile, 'recreate')
     dataset = make_roodataset(args.datasetname, args.datasettitle, tree,

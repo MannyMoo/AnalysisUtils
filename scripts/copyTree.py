@@ -1,21 +1,18 @@
 #!/bin/env python
 
-from optparse import OptionParser
-import sys
+from argparse import ArgumentParser
+from AnalysisUtils.treeutils import copy_tree
 
-optParse = OptionParser()
-optParse.add_option("--inFile", type="string", dest="inFile")
-optParse.add_option("--inTree", type="string", dest="inTree")
-optParse.add_option("--outFile", type="string", dest="outFile")
-optParse.add_option("--nEntries", type="int", dest="nEntries", default=1e9)
-optParse.add_option("--selection", type="string", dest="selection", default="")
+optParse = ArgumentParser()
+optParse.add_argument("--inFiles", nargs = '+', help = 'Name of the input file(s), can be a list.')
+optParse.add_argument("--inTree", help = 'Name of the input TTree')
+optParse.add_argument("--outFile", help = 'Name of the output file')
+optParse.add_argument("--nEntries", type = int, default=-1, help = 'Number of entries to copy (default all).')
+optParse.add_argument("--selection", default = '', help = 'Selection to apply (default none).')
+optParse.add_argument('--keepBranches', nargs = '*', help = 'List of regexes to be matched to branches to be kept.')
+optParse.add_argument('--removeBranches', nargs = '*', help = 'List of regexes to be matched to branches to be removed.')
 
-(options,args) = optParse.parse_args()
-
-if options.inFile == None or options.inTree == None or options.outFile == None :
-    print "Usage:"
-    print "copyTree.py --inFile <input file name> --inTree <input TTree name> --outFile <output file name> [--nEntries <n. entries to copy> --selection <selection to apply>]"
-    sys.exit(0)
+args = optParse.parse_args()
 
 from ROOT import TTree, TFile
 
@@ -24,6 +21,7 @@ inTree = TTree()
 inFile.GetObject(options.inTree, inTree)
 
 outFile = TFile(options.outFile, "recreate")
-outTree = inTree.CopyTree(options.selection, "",int(options.nEntries))
+copy_tree(inTree, selection = args.selection, nentries = args.nEntries, keepbranches = args.keepBranches,
+          removebranches = args.removeBranches)
 outTree.Write()
 outFile.Close()
