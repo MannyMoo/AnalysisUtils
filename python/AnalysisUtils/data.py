@@ -74,7 +74,20 @@ class DataLibrary(object) :
             setattr(self, name, DataLibrary.DataGetter(self.get_data, name))
             setattr(self, name + '_Dataset', DataLibrary.DataGetter(self.get_dataset, name))
 
-    def draw(self, tree, variable, hname = None, nbins = None, xmin = None, xmax = None, selection = None) :
+    def _form_and_range(self, variable, xmin, xmax) :
+        '''Get the variable formula and range if it's in the dict of variables.'''
+        if variable in self.variables :
+            form = self.variables[variable]['formula']
+            xmin = xmin if xmin != None else self.variables[variable]['xmin']
+            xmax = xmax if xmax != None else self.variables[variable]['xmax']
+        else :
+            form = variable
+            if xmin == None or xmax == None :
+                raise ValueError('Must give xmin and xmax for variables not in the known variables!')
+        return form, xmin, xmax
+
+    def draw(self, tree, variable, hname = None, nbins = None, xmin = None, xmax = None, selection = None,
+             variableY = None, nbinsY = None, ymin = None, ymax = None, drawopt = '') :
         '''Make a histogram of a variable. If 'tree' is a string, the dataset with the corresponding name
         is retrieved, else it's expected to be a TTree. If 'variable' is the name of a variable in the internal
         dict of variables, then its formula is taken from there, else it's expected to be a formula understood
@@ -84,17 +97,22 @@ class DataLibrary(object) :
         if isinstance(tree, str) :
             tree = self.get_data(tree)
         nbins = nbins if nbins else 100
-        hname = hname if hname else variable
+        if not hname :
+            if variableY :
+                hname = variableY + '_vs_' + variable
+            else :
+                hname = variable
         if not selection :
             selection = self.selection if self.selection else ''
-        if variable in self.variables :
-            form = self.variables[variable]['formula']
-            xmin = xmin if xmin != None else self.variables[variable]['xmin']
-            xmax = xmax if xmax != None else self.variables[variable]['xmax']
-        else :
-            form = variable
-            if xmin == None or xmax == None :
-                raise ValueError('Must give xmin and xmax for variables not in the known variables!')
-        h = ROOT.TH1F(hname, '', nbins, xmin, xmax)
-        tree.Draw('{form} >> {hname}'.format(**locals()), selection)
+        form, xmin, xmax = self._form_and_range(variable, xmin, xmax)
+        if not variableY :
+            h = ROOT.TH1F(hname, '', nbins, xmin, xmax)
+            tree.Draw('{form} >> {hname}'.format(**locals()), selection, drawopt)
+            return h
+        formY, ymin, ymax = self._form_and_range(variableY, ymin, ymax)
+        if None == nbinsY :
+            nbinsY = nbins
+        h = ROOT.TH2F(hname, '', nbins, xmin, xmax, nbinsY, ymin, ymax)
+        tree.Draw('{formY} : {form} >> {hname}'.format(**locals()), selection, drawopt)
         return h
+
