@@ -17,7 +17,7 @@ class DataLibrary(object) :
         def __call__(self) :
             return self.method(*self.args)
 
-    def __init__(self, datapaths, variables, ignorecompilefails = False, selection = None, varnames = ()) :
+    def __init__(self, datapaths, variables, ignorecompilefails = False, selection = '', varnames = ()) :
         self.datapaths = datapaths
         self.variables = variables
         self.varnames = varnames
@@ -25,11 +25,19 @@ class DataLibrary(object) :
         self.ignorecompilefails = ignorecompilefails
         self.make_getters()
 
+    def _getattr(self, tree, attr) :
+        '''Get an attr from the tree if it has it, else return the DataLibrary's one.'''
+        if hasattr(tree, attr) :
+            return getattr(tree, attr)
+        return getattr(self, attr)
+
     def _variables(self, tree) :
         '''Get the variables dict of the TTree if it has one, else return the default dict.'''
-        if hasattr(tree, 'variables') :
-            return tree.variables
-        return self.variables
+        return self._getattr(tree, 'variables')
+
+    def _selection(self, tree) :
+        '''Get the selection of the TTree if it has one, else return the default selection.'''
+        return self._getattr(tree, 'selection')
 
     def get_data(self, name) :
         '''Get the dataset of the given name.'''
@@ -42,6 +50,8 @@ class DataLibrary(object) :
                 if 'variables' in info :
                     t.variables = dict(self.variables)
                     t.variables.update(info['variables'])
+                if 'selection' in info :
+                    t.selection = info['selection']
                 return t
             else :
                 return make_chain(*self.datapaths[name])
@@ -75,7 +85,7 @@ class DataLibrary(object) :
         variables = self._variables(tree)
         dataset = make_roodataset(dataname, dataname, tree,
                                   ignorecompilefails = self.ignorecompilefails,
-                                  selection = self.selection,
+                                  selection = self._selection(tree),
                                   **dict((var, variables[var]) for var in varnames))
 
         fname = self.dataset_file_name(dataname)
@@ -121,7 +131,7 @@ class DataLibrary(object) :
             else :
                 hname = variable
         if not selection :
-            selection = self.selection if self.selection else ''
+            selection = self._selection(tree)
         form, xmin, xmax = self._form_and_range(tree, variable, xmin, xmax)
         if not variableY :
             h = ROOT.TH1F(hname, '', nbins, xmin, xmax)

@@ -5,3 +5,6 @@ def AND(*args) :
 
 def OR(*args) :
     return '(' + ') || ('.join(args) + ')'
+
+def NOT(sel) :
+    return '!(' + sel + ')'
