@@ -25,6 +25,12 @@ class DataLibrary(object) :
         self.ignorecompilefails = ignorecompilefails
         self.make_getters()
 
+    def _variables(self, tree) :
+        '''Get the variables dict of the TTree if it has one, else return the default dict.'''
+        if hasattr(tree, 'variables') :
+            return tree.variables
+        return self.variables
+
     def get_data(self, name) :
         '''Get the dataset of the given name.'''
         try :
@@ -33,6 +39,9 @@ class DataLibrary(object) :
                 t = make_chain(info['tree'], *info['files'])
                 aliases = info.get('aliases', {})
                 set_prefix_aliases(t, **aliases)
+                if 'variables' in info :
+                    t.variables = dict(self.variables)
+                    t.variables.update(info['variables'])
                 return t
             else :
                 return make_chain(*self.datapaths[name])
@@ -63,10 +72,11 @@ class DataLibrary(object) :
 
         print 'Making RooDataSet for', dataname
         tree = self.get_data(dataname)
+        variables = self._variables(tree)
         dataset = make_roodataset(dataname, dataname, tree,
                                   ignorecompilefails = self.ignorecompilefails,
                                   selection = self.selection,
-                                  **dict((var, self.variables[var]) for var in varnames))
+                                  **dict((var, variables[var]) for var in varnames))
 
         fname = self.dataset_file_name(dataname)
         print 'Saving to', fname
@@ -81,12 +91,13 @@ class DataLibrary(object) :
             setattr(self, name, DataLibrary.DataGetter(self.get_data, name))
             setattr(self, name + '_Dataset', DataLibrary.DataGetter(self.get_dataset, name))
 
-    def _form_and_range(self, variable, xmin, xmax) :
+    def _form_and_range(self, tree, variable, xmin, xmax) :
         '''Get the variable formula and range if it's in the dict of variables.'''
-        if variable in self.variables :
-            form = self.variables[variable]['formula']
-            xmin = xmin if xmin != None else self.variables[variable]['xmin']
-            xmax = xmax if xmax != None else self.variables[variable]['xmax']
+        variables = self._variables(tree)
+        if variable in variables :
+            form = variables[variable]['formula']
+            xmin = xmin if xmin != None else variables[variable]['xmin']
+            xmax = xmax if xmax != None else variables[variable]['xmax']
         else :
             form = variable
             if xmin == None or xmax == None :
@@ -111,12 +122,12 @@ class DataLibrary(object) :
                 hname = variable
         if not selection :
             selection = self.selection if self.selection else ''
-        form, xmin, xmax = self._form_and_range(variable, xmin, xmax)
+        form, xmin, xmax = self._form_and_range(tree, variable, xmin, xmax)
         if not variableY :
             h = ROOT.TH1F(hname, '', nbins, xmin, xmax)
             tree.Draw('{form} >> {hname}'.format(**locals()), selection, drawopt)
             return h
-        formY, ymin, ymax = self._form_and_range(variableY, ymin, ymax)
+        formY, ymin, ymax = self._form_and_range(tree, variableY, ymin, ymax)
         if None == nbinsY :
             nbinsY = nbins
         h = ROOT.TH2F(hname, '', nbins, xmin, xmax, nbinsY, ymin, ymax)
