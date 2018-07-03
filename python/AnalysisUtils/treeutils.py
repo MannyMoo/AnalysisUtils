@@ -10,6 +10,17 @@ def make_chain(treename, *fnames) :
         chain.Add(fname)
     return chain
 
+def set_prefix_aliases(tree, **aliases) :
+    '''Scan over branches in the tree and if they contain any of the keys in 'aliases',
+    create an alias with those keys replaced by the corresponding values in 'aliases'.
+    This allows you to easily work with TTrees with different name prefixes.'''
+    for branch in tree.GetListOfBranches() :
+        newname = branch.GetName()
+        for name, alias in aliases.items() :
+            if name in newname :
+                newname = newname.replace(name, alias)
+        tree.SetAlias(newname, branch.GetName())
+
 def identifier(tree, i, *branches) :
     '''Get an identifier for entry i in the tree using the given branch names.'''
     vals = []

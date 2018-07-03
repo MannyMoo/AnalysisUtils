@@ -2,7 +2,7 @@
 
 import os, ROOT, pprint
 from AnalysisUtils.makeroodataset import make_roodataset
-from AnalysisUtils.treeutils import make_chain
+from AnalysisUtils.treeutils import make_chain, set_prefix_aliases
 from array import array
 
 class DataLibrary(object) :
@@ -28,7 +28,14 @@ class DataLibrary(object) :
     def get_data(self, name) :
         '''Get the dataset of the given name.'''
         try :
-            return make_chain(*self.datapaths[name])
+            info = self.datapaths[name]
+            if isinstance(info, dict) :
+                t = make_chain(info['tree'], *info['files'])
+                aliases = info.get('aliases', {})
+                set_prefix_aliases(t, **aliases)
+                return t
+            else :
+                return make_chain(*self.datapaths[name])
         except KeyError :
             raise ValueError('Unknown data type: ' + repr(name))
 
