@@ -3,7 +3,7 @@
 import ROOT
 
 def plot_fit(pdf, data, plotVar = None, pullCanvHeight = 0.2, canvArgs = (),
-             dataPlotArgs = ()) :
+             dataPlotArgs = (), components = ()) :
     '''Plot the fit over the data for the given plotVar with the pull below. If
     pullCanvHeight == 0. the pull isn't drawn. If pdf.extendMode() is True, the fit PDF
     is normalised according to the fitted yields of the extended PDF, else it's
@@ -29,6 +29,9 @@ def plot_fit(pdf, data, plotVar = None, pullCanvHeight = 0.2, canvArgs = (),
 
     mainFrame = plotVar.frame()
     data.plotOn(mainFrame, *dataPlotArgs)
+    if components :
+        for component in components :
+            pdf.plotOn(mainFrame, *component)
     if hasattr(pdf, 'extendMode') and pdf.extendMode() != 0 :
         # Change from RooAbsReal.RelativeExtended, as given in the manual, as it doesn't
         # exist.
