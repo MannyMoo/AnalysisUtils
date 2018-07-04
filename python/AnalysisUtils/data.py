@@ -2,7 +2,7 @@
 
 import os, ROOT, pprint
 from AnalysisUtils.makeroodataset import make_roodataset
-from AnalysisUtils.treeutils import make_chain, set_prefix_aliases
+from AnalysisUtils.treeutils import make_chain, set_prefix_aliases, check_formula_compiles
 from array import array
 
 class DataLibrary(object) :
@@ -61,13 +61,23 @@ class DataLibrary(object) :
     def dataset_file_name(self, dataname) :
         '''Get the name of the file containing the RooDataset corresponding to the given
         dataset name.'''
-        return os.path.join(os.path.dirname(self.datapaths[dataname][1]), dataname + '_Dataset.root')
+        if isinstance(self.datapaths[dataname], dict) :
+            if 'datasetdir' in self.datapaths[dataname] :
+                dirname = self.datapaths[dataname]['datasetdir']
+            else :
+                dirname = os.path.dirname(self.datapaths[dataname]['files'][0])
+        else :
+            dirname = os.path.dirname(self.datapaths[dataname][1])
+        return os.path.join(dirname, dataname + '_Dataset.root')
 
     def get_dataset(self, dataname, varnames = None, update = False) :
         '''Get the RooDataSet of the given name. It's created/updated on demand. varnames is the 
         set of variables to be included in the RooDataSet. They must correspond to those defined 
         in the variables module. If the list of varnames changes or if update = True the 
         RooDataSet will be recreated.'''
+
+        tree = self.get_data(dataname)
+
         if not varnames :
             varnames = self.varnames
         if not update :
@@ -75,13 +85,18 @@ class DataLibrary(object) :
             if fout :
                 dataset = fout.Get(dataname)
                 cand = dataset.get(0)
-                if dataset and cand and set(varnames) == set(cand.contentsString().split(',')) :
+                if self.ignorecompilefails :
+                    checkvarnames = filter(lambda name : check_formula_compiles(self.variables[name]['formula'],
+                                                                                tree),
+                                           varnames)
+                else :
+                    checkvarnames = varnames
+                if dataset and cand and set(checkvarnames) == set(cand.contentsString().split(',')) :
                     fout.Close()
                     return dataset
                 fout.Close()
 
         print 'Making RooDataSet for', dataname
-        tree = self.get_data(dataname)
         variables = self._variables(tree)
         dataset = make_roodataset(dataname, dataname, tree,
                                   ignorecompilefails = self.ignorecompilefails,

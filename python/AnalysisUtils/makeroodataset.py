@@ -122,9 +122,10 @@ def make_roodataset(dataname, datatitle, tree, nentries = -1, selection = '',
         if inrange :
             dataset.add(rooargs)
 
-    print 'Read', nentries, 'entries from TTree', tree.GetName()
+    print 'Read', nentries, 'entries from TTree', tree.GetName() + '.'
+    print 'Selected', dataset.numEntries(), 'entries.'
     if selection :
-        print 'Rejected', nfailsel, 'entries using selection', repr(selection)
+        print 'Rejected', nfailsel, 'entries using selection', repr(selection) + '.'
     print 'Rejected', noutofrange, 'entries for being out of range.'
 
     return dataset

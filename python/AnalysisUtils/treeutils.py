@@ -125,6 +125,10 @@ def merge_trees_to_file(outputfname, tree1Names, tree2Names, *treeNames) :
         f.Close()
     outfile.Close()
 
+def check_formula_compiles(formula, tree) :
+    '''Check if the given forumla compiles on the given tree.'''
+    return ROOT.TTreeFormula(formula, formula, tree).Compile() == 0
+
 class TreeFormula(object) :
     '''Wrapper for TTreeFormula, so it can just be called and return the value of the formula.
     Works for TTrees and TChains.'''
@@ -135,7 +139,7 @@ class TreeFormula(object) :
         self.form = ROOT.TTreeFormula(name, formula, tree)
         # Calling Compile sometimes breaks the TTreeFormula, for reasons unknown, so
         # use a disposable instance to check compilation.
-        self.ok = (ROOT.TTreeFormula(name, formula, tree).Compile() == 0)
+        self.ok = check_formula_compiles(formula, tree)
         if isinstance(tree, ROOT.TChain) :
             chainid = id(tree)
             if not chainid in TreeFormula.chainformulae :
