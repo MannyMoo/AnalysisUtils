@@ -83,15 +83,14 @@ class DataLibrary(object) :
         if not update :
             fout = ROOT.TFile.Open(self.dataset_file_name(dataname))
             if fout :
-                dataset = fout.Get(dataname)
-                cand = dataset.get(0)
                 if self.ignorecompilefails :
                     checkvarnames = filter(lambda name : check_formula_compiles(self.variables[name]['formula'],
                                                                                 tree),
                                            varnames)
                 else :
                     checkvarnames = varnames
-                if dataset and cand and set(checkvarnames) == set(cand.contentsString().split(',')) :
+                dataset = fout.Get(dataname)
+                if dataset and set(checkvarnames) == set(dataset.get(0).contentsString().split(',')) :
                     fout.Close()
                     return dataset
                 fout.Close()
