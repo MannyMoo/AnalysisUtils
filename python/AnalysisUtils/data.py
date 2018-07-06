@@ -52,9 +52,11 @@ class DataLibrary(object) :
                     t.variables.update(info['variables'])
                 if 'selection' in info :
                     t.selection = info['selection']
-                return t
             else :
-                return make_chain(*self.datapaths[name])
+                t = make_chain(*self.datapaths[name])
+            for varname, varinfo in self._variables(t).items() :
+                t.SetAlias(varname, varinfo['formula'])
+            return t
         except KeyError :
             raise ValueError('Unknown data type: ' + repr(name))
 
