@@ -193,3 +193,29 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
     else :
         treecopy = tree.CopyTree(selection)
     return treecopy
+
+def tree_iter(tree, formula, selection = None) :
+    '''Iterator over a TTree, returning the formula value, optionally only for 
+    entries satisfying the selection.'''
+    form = TreeFormula(formula, formula, tree)
+    if not selection :
+        for i in xrange(tree.GetEntries()) :
+            tree.LoadTree(i)
+            yield form()
+    else :
+        sel = TreeFormula(selection, selection, tree)
+        for i in xrange(tree.GetEntries()) :
+            tree.LoadTree(i)
+            if not sel() :
+                continue
+            yield form()
+
+def tree_mean(tree, formula, selection = None) :
+    '''Mean of the formula over the TTree, optionally only for entries passing
+    the selection.'''
+    n = 0
+    tot = 0.
+    for val in tree_iter(tree, formula, selection) :
+        n += 1
+        tot += val
+    return tot/n
