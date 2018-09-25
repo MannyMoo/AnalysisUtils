@@ -39,37 +39,39 @@ class DataLibrary(object) :
         '''Get the selection of the TTree if it has one, else return the default selection.'''
         return self._getattr(tree, 'selection')
 
-    def get_data(self, name) :
-        '''Get the dataset of the given name.'''
+    def get_data_info(self, name) :
+        '''Get the info dict on the dataset of the given name.'''
         try :
             info = self.datapaths[name]
             if isinstance(info, dict) :
-                t = make_chain(info['tree'], *info['files'])
-                aliases = info.get('aliases', {})
-                set_prefix_aliases(t, **aliases)
-                if 'variables' in info :
-                    t.variables = dict(self.variables)
-                    t.variables.update(info['variables'])
-                if 'selection' in info :
-                    t.selection = info['selection']
-            else :
-                t = make_chain(*self.datapaths[name])
-            for varname, varinfo in self._variables(t).items() :
-                t.SetAlias(varname, varinfo['formula'])
-            return t
+                return info
+            return {'tree' : info[0], 'files' : info[1:]}
         except KeyError :
             raise ValueError('Unknown data type: ' + repr(name))
+
+    def get_data(self, name) :
+        '''Get the dataset of the given name.'''
+        info = self.get_data_info(name)
+        t = make_chain(info['tree'], *info['files'])
+        aliases = info.get('aliases', {})
+        set_prefix_aliases(t, **aliases)
+        if 'variables' in info :
+            t.variables = dict(self.variables)
+            t.variables.update(info['variables'])
+        if 'selection' in info :
+            t.selection = info['selection']
+        for varname, varinfo in self._variables(t).items() :
+            t.SetAlias(varname, varinfo['formula'])
+        return t
 
     def dataset_file_name(self, dataname) :
         '''Get the name of the file containing the RooDataset corresponding to the given
         dataset name.'''
-        if isinstance(self.datapaths[dataname], dict) :
-            if 'datasetdir' in self.datapaths[dataname] :
-                dirname = self.datapaths[dataname]['datasetdir']
-            else :
-                dirname = os.path.dirname(self.datapaths[dataname]['files'][0])
+        info = self.get_data_info(dataname)
+        if 'datasetdir' in info :
+            dirname = info['datasetdir']
         else :
-            dirname = os.path.dirname(self.datapaths[dataname][1])
+            dirname = os.path.dirname(info['files'][0])
         return os.path.join(dirname, dataname + '_Dataset.root')
 
     def get_dataset(self, dataname, varnames = None, update = False) :
