@@ -21,7 +21,7 @@ inTree = TTree()
 inFile.GetObject(options.inTree, inTree)
 
 outFile = TFile(options.outFile, "recreate")
-copy_tree(inTree, selection = args.selection, nentries = args.nEntries, keepbranches = args.keepBranches,
-          removebranches = args.removeBranches)
+outTree = copy_tree(inTree, selection = args.selection, nentries = args.nEntries, keepbranches = args.keepBranches,
+                    removebranches = args.removeBranches)
 outTree.Write()
 outFile.Close()
