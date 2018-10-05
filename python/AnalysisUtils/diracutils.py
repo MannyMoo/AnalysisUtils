@@ -65,3 +65,21 @@ def get_lfns_from_path(path, outputfile = None) :
     '''Get the LFNs from the given BK path.'''
     return get_lfns('-B', path, outputfile = outputfile)
                 
+def get_step_info(stepid) :
+    '''Get info on the given production step.'''
+    
+    args = ['python', '-c', '''
+import sys, subprocess
+from DIRAC.Core.Base.Script import parseCommandLine
+parseCommandLine() # Need this for some reason.
+from LHCbDIRAC.BookkeepingSystem.Client.BookkeepingClient import BookkeepingClient
+
+bk = BookkeepingClient()
+stepid = '%s'
+info = bk.getAvailableSteps({'StepId' : stepid})
+info = dict(zip(info['Value']['ParameterNames'], info['Value']['Records'][0]))
+print repr(info)
+''' % stepid]
+    result = dirac_call(*args)
+    info = eval(result['stdout'])
+    return info
