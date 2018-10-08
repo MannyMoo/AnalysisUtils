@@ -4,6 +4,68 @@ import ROOT
 from array import array
 from AnalysisUtils.treeutils import TreeFormula
 
+class MVACalc(object) :
+    '''Class to calculate MVA variables from an xml file output by TMVA.'''
+
+    def __init__(self, inputtree, weightsfile, weightsvar) :
+        '''Takes the TTree on which to calculate the MVA, the xml file output by the TMVA
+        training, and the name of the MVA variable.'''
+
+        self.inputtree = inputtree
+        self.weightsfile = weightsfile
+        self.weightsvar = weightsvar
+
+        weightstree = ElementTree.parse(self.weightsfile)
+        weightsroot = weightstree.getroot()
+
+        self.reader = ROOT.TMVA.Reader('Silent')
+        self.treevars = {}
+        self.tmvavararrays = {}
+
+        weightvars = weightsroot.findall('Variables')[0].findall('Variable')
+        for v in weightvars :
+            form = v.get('Expression')
+            vtype = v.get('Type')
+
+            self.tmvavararrays[form] = array(vtype.lower(), [0])
+            self.reader.AddVariable(form, self.tmvavararrays[form])
+            self.treevars[form] = TreeFormula(form, form, inputtree)
+
+        spectatorvars = weightsroot.findall('Spectators')[0].findall('Spectator')
+        for v in spectatorvars :
+            form = v.get('Expression')
+            vtype = v.get('Type')
+            self.tmvavararrays[form] = array(vtype.lower(), [0])
+            self.reader.AddSpectator(form, self.tmvavararrays[form])
+            self.treevars[form] = TreeFormula(form, inputtree)
+
+        self.reader.BookMVA(self.weightsvar, self.weightsfile)
+
+    def calc_mva(self, ientry) :
+        '''Calculate the MVA variable for the given entry in the input tree.'''
+        self.inputtree.LoadTree(ientry)
+        for key, treeval in self.treevars.iteritems() :
+            self.tmvavararrays[key][0] = treeval()
+        return self.reader.EvaluateMVA(self.weightsvar)
+
+def make_mva_tree(inputtree, weightsfile, weightsvar, outputtree, outputfile, maxentries = -1) :
+    '''Make a TTree containing the MVA variable values for the given input tree.'''
+    mvacalc = MVACalc(inputtree, weightsfile, weightsvar)
+
+    outputfile = ROOT.TFile.Open(outputfile, 'recreate')
+    outputtree = ROOT.TTree(outputtree, outputtree)
+    mvavar = array('f', [0])
+    outputtree.Branch(weightsvar, mvavar, weightsvar + '/F')
+
+    if maxentries == -1 :
+        maxentries = inputtree.GetEntries()
+
+    for i in xrange(min(maxentries, inputtree.GetEntries())) :
+        mvavar[0] = mvacalc.calc_mva(i)
+        outputtree.Fill()
+    outputtree.Write()
+    outputfile.Close()    
+
 def main() :
     ROOT.gROOT.SetBatch(True)
     argparser = ArgumentParser()
@@ -22,62 +84,7 @@ def main() :
     if not inputtree :
         raise Exception("File {0!r} doesn't contain a TTree called {1!r}!".format(args.inputfile, args.inputtree))
 
-    weightstree = ElementTree.parse(args.weightsfile)
-    weightsroot = weightstree.getroot()
-
-    reader = ROOT.TMVA.Reader('Silent')
-    treevars = {}
-    tmvavararrays = {}
-
-    weightvars = weightsroot.findall('Variables')[0].findall('Variable')
-    for v in weightvars :
-        # This will only work when the formula corresponds to a branch, 
-        # and not a combination of branches. 
-        form = v.get('Expression')
-        vtype = v.get('Type')
-
-        tmvavararrays[form] = array(vtype.lower(), [0])
-        reader.AddVariable(form, tmvavararrays[form])
-
-        #treetype = inputtree.GetBranch(form).GetLeaf(form).GetTypeName()
-        #treevararrays[form] = array(treetype[0].lower(), [0])
-        treevars[form] = TreeFormula(form, form, inputtree)
-        #inputtree.SetBranchAddress(form, treevararrays[form])
-
-    spectatorvars = weightsroot.findall('Spectators')[0].findall('Spectator')
-    for v in spectatorvars :
-        form = v.get('Expression')
-        vtype = v.get('Type')
-        tmvavararrays[form] = array(vtype.lower(), [0])
-        reader.AddSpectator(form, tmvavararrays[form])
-
-        #treetype = inputtree.GetBranch(form).GetLeaf(form).GetTypeName()
-        #treevararrays[form] = array(treetype[0].lower(), [0])
-        treevars[form] = TreeFormula(form, inputtree)
-        #inputtree.SetBranchAddress(form, treevararrays[form])
-
-    reader.BookMVA(args.weightsvar, args.weightsfile)
-
-    outputfile = ROOT.TFile.Open(args.outputfile, 'recreate')
-    outputtree = ROOT.TTree(args.outputtree, args.outputtree)
-    mvavar = array('f', [0])
-    outputtree.Branch(args.weightsvar, mvavar, args.weightsvar + '/F')
-
-    if args.maxentries == -1 :
-        args.maxentries = inputtree.GetEntries()
-
-    for i in xrange(min(args.maxentries, inputtree.GetEntries())) :
-        inputtree.LoadTree(i)
-        #for key, treeval in treevararrays.iteritems() :
-        #    for j in xrange(len(treeval)) :
-        #        tmvavararrays[key][j] = treeval[j]
-        for key, treeval in treevars.iteritems() :
-            tmvavararrays[key][0] = treeval()
-
-        mvavar[0] = reader.EvaluateMVA(args.weightsvar)
-        outputtree.Fill()
-    outputtree.Write()
-    outputfile.Close()
+    make_mva_tree(inputtree, args.weightsfile, args.weightsvar, args.outputtree, args.outputfile, args.maxentries)
 
 if __name__ == '__main__' :
     main()
