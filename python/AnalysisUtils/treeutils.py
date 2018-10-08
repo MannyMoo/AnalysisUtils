@@ -210,12 +210,38 @@ def tree_iter(tree, formula, selection = None) :
                 continue
             yield form()
 
-def tree_mean(tree, formula, selection = None) :
+def tree_mean(tree, formula, selection = None, weight = None) :
     '''Mean of the formula over the TTree, optionally only for entries passing
     the selection.'''
     n = 0
     tot = 0.
-    for val in tree_iter(tree, formula, selection) :
-        n += 1
-        tot += val
-    return tot/n
+    totsq = 0.
+    if not weight :
+        for val in tree_iter(tree, formula, selection) :
+            n += 1
+            tot += val
+            totsq += val**2.
+    else :
+        weightiter = tree_iter(tree, weight, selection)
+        valiter = tree_iter(tree, formula, selection)
+        sumw2 = 0.
+        ncand = 0
+        while True :
+            try :
+                weight = weightiter.next()
+                val = valiter.next()
+                n += weight
+                tot += val * weight
+                totsq += val**2. * weight
+                sumw2 += weight**2.
+                ncand += 1
+            except StopIteration :
+                break
+    mean = tot/n
+    meansq = totsq/n
+    err = ((meansq - mean**2)/n)**.5
+    # Scale the error to account for the weights.
+    if weight :
+        neff = n**2/sumw2
+        err *= (ncand/neff)**.5
+    return mean, err
