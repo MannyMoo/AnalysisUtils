@@ -10,14 +10,16 @@ def dirac_call(*args, **kwargs) :
                             stdout = subprocess.PIPE, stderr = subprocess.PIPE)
     stdout, stderr = proc.communicate()
     exitcode = proc.poll()
+    returnval = {'stdout' : stdout, 'stderr' : stderr, 'exitcode' : exitcode}
     if 0 != exitcode and kwargs.get('raiseonfailure', True) :
         raise OSError('''Call to {0!r} failed!
+Exit code: {1}
 stdout:
-'''.format(' '.join(args)) + returnval['stdout'] + '''
+'''.format(' '.join(args), returnval['exitcode']) + returnval['stdout'] + '''
 stderr:
 ''' + returnval['stderr'])
     
-    return {'stdout' : stdout, 'stderr' : stderr, 'exitcode' : exitcode}
+    return returnval
 
 def get_bk_decay_paths(evttype, exclusions = (), outputfile = None) :
     '''Get bk paths for the given event type, sorted by year. Paths 
@@ -25,19 +27,26 @@ def get_bk_decay_paths(evttype, exclusions = (), outputfile = None) :
     'outputfile' is given, the return dict is written to that file.'''
 
     returnval = dirac_call('dirac-bookkeeping-decays-path', str(evttype))
-    paths = [p[0] for p in eval('[' + returnval['stdout'].replace('\n', ',') + ']')]
-    paths = filter(lambda p : not any(re.search(excl, p) for excl in exclusions), paths)
+    paths = [p for p in eval('[' + returnval['stdout'].replace('\n', ',') + ']')]
+    paths = filter(lambda p : not any(re.search(excl, p[0]) for excl in exclusions), paths)
+    paths = {p[0] : p[1:] for p in paths}
     pathsdict = defaultdict(set)
     for path in paths :
         pathsdict[path.split('/')[2]].add(path)
-    pathsdict = dict((year, list(paths)) for year, paths in pathsdict.items())
+    _pathsdict = {}
+    for year, _paths in pathsdict.items() :
+        _pathsdict[year] = []
+        for path in _paths :
+            _pathsdict[year].append({'path' : path, 'dddbtag' : paths[path][0], 'conddbtag' : paths[path][1],
+                                     'nfiles' : paths[path][2], 'nevents' : paths[path][3],
+                                     'production' : paths[path][4]})
     if outputfile :
         with open(outputfile, 'w') as f :
             f.write('''# Evttype : {0}
 # Exclusions : {1}
 decaypaths = \\
 {2}
-'''.format(evttype, exclusions, pprint.pformat(pathsdict)))
+'''.format(evttype, exclusions, pprint.pformat(_pathsdict)))
     return pathsdict
 
 def get_lfns(*args, **kwargs) :
