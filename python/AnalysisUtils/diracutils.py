@@ -47,7 +47,7 @@ def get_bk_decay_paths(evttype, exclusions = (), outputfile = None) :
 decaypaths = \\
 {2}
 '''.format(evttype, exclusions, pprint.pformat(_pathsdict)))
-    return pathsdict
+    return _pathsdict
 
 def get_lfns(*args, **kwargs) :
     '''Get the LFNs from the given BK query. If the keyword arg 'outputfile' is given,
