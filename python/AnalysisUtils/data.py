@@ -62,6 +62,9 @@ class DataLibrary(object) :
             t.selection = info['selection']
         for varname, varinfo in self._variables(t).items() :
             t.SetAlias(varname, varinfo['formula'])
+        if 'friends' in info :
+            for friend in info['friends'] :
+                t.AddFriend(self.get_data(friend))
         return t
 
     def dataset_file_name(self, dataname) :
