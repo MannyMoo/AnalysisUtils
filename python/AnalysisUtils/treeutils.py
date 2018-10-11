@@ -10,7 +10,7 @@ def is_tfile_ok(tfile) :
         tfile = ROOT.TFile.Open(tfile)
         close = True
     ok = (None != tfile and not tfile.IsZombie() and not tfile.TestBit(ROOT.TFile.kRecovered))
-    if close :
+    if close and tfile and not tfile.IsZombie() :
         tfile.Close()
     return ok
 
