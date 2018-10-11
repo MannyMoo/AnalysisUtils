@@ -3,6 +3,17 @@
 import ROOT, pprint, re
 from array import array
 
+def is_tfile_ok(tfile) :
+    '''Check if a TFile is OK (not a zombie and was closed properly).'''
+    close = False
+    if isinstance(tfile, str) :
+        tfile = ROOT.TFile.Open(tfile)
+        close = True
+    ok = (None != tfile and not tfile.IsZombie() and not tfile.TestBit(ROOT.TFile.kRecovered))
+    if close :
+        tfile.Close()
+    return ok
+
 def make_chain(treename, *fnames) :
     '''Make a TChain from a tree name and a list of file names.'''
     chain = ROOT.TChain(treename)

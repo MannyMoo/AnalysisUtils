@@ -92,3 +92,31 @@ print repr(info)
     result = dirac_call(*args)
     info = eval(result['stdout'])
     return info
+
+def get_access_urls(lfns, outputfile = None, urls = None) :
+    '''Get the access URLs for the given LFNs. Returns a dict of {LFN : [URLs]}. If 
+    an existing dict 'urls' is given, it will attempt to update the URLs for
+    LFNs that don't currently have any.'''
+
+    # If an existing dict is given, just update the URLs for those that're missing.
+    if urls :
+        lfns = filter(lambda lfn : not urls[lfn], urls.keys())
+    else :
+        urls = {lfn : [] for lfn in lfns}
+    returnval = dirac_call('dirac-dms-lfn-accessURL', '-l', ','.join(lfns))
+    lines = returnval['stdout'].splitlines()
+    for iline, line in enumerate(lines) :
+        if 'Successful' in line :
+            break
+    for line in lines[iline+1:] :
+        line = line.strip()
+        if not line.startswith('/lhcb') :
+            continue
+        lfn, url = line.split(' : ')
+        urls[lfn.strip()].append(url.strip())
+    if outputfile :
+        with open(outputfile, 'w') as f :
+            f.write('''urls = \\
+''' + pprint.pformat(urls))
+    print 'Got URLs for', str(sum(int(bool(url)) for url in urls.values())) + '/' + str(len(lfns)), 'LFNs.'
+    return urls
