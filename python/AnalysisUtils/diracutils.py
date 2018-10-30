@@ -93,17 +93,20 @@ print repr(info)
     info = eval(result['stdout'])
     return info
 
-def get_access_urls(lfns, outputfile = None, urls = None) :
+def get_access_urls(lfns, outputfile = None, urls = None, protocol = 'xroot') :
     '''Get the access URLs for the given LFNs. Returns a dict of {LFN : [URLs]}. If 
     an existing dict 'urls' is given, it will attempt to update the URLs for
     LFNs that don't currently have any.'''
 
     # If an existing dict is given, just update the URLs for those that're missing.
     if urls :
-        lfns = filter(lambda lfn : not urls[lfn], urls.keys())
+        lfns = filter(lambda lfn : not urls.get(lfn, []), set(urls.keys() + lfns))
+        for lfn in lfns :
+            if not lfn in urls :
+                urls[lfn] = []
     else :
         urls = {lfn : [] for lfn in lfns}
-    returnval = dirac_call('dirac-dms-lfn-accessURL', '-l', ','.join(lfns))
+    returnval = dirac_call('dirac-dms-lfn-accessURL', '--Protocol=' + protocol, '-l', ','.join(lfns))
     lines = returnval['stdout'].splitlines()
     for iline, line in enumerate(lines) :
         if 'Successful' in line :
@@ -118,5 +121,5 @@ def get_access_urls(lfns, outputfile = None, urls = None) :
         with open(outputfile, 'w') as f :
             f.write('''urls = \\
 ''' + pprint.pformat(urls))
-    print 'Got URLs for', str(sum(int(bool(url)) for url in urls.values())) + '/' + str(len(lfns)), 'LFNs.'
+    print 'Got URLs for', str(sum(int(bool(url)) for url in urls.values())) + '/' + str(len(urls)), 'LFNs.'
     return urls
