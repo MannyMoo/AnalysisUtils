@@ -55,7 +55,7 @@ class TreeVar(object) :
         return self._str()
                                                                       
 def make_roodataset(dataname, datatitle, tree, nentries = -1, selection = '', 
-                    ignorecompilefails = False, **variables) :
+                    ignorecompilefails = False, weightvarname = None, **variables) :
     '''dataname: name of the RooDataSet to be made.
     datatitle: title of the RooDataSet.
     tree: TTree to take the data from.
@@ -95,8 +95,14 @@ def make_roodataset(dataname, datatitle, tree, nentries = -1, selection = '',
     else :
         selvar = lambda : True
 
-    dataset = ROOT.RooDataSet(dataname, datatitle, rooargs)
-    
+    if weightvarname :
+        print 'Using variable', weightvarname, 'as weight'
+        dataset = ROOT.RooDataSet(dataname, datatitle, rooargs, weightvarname)
+        weight = lambda : rooargs[weightvarname].getVal()
+    else :
+        dataset = ROOT.RooDataSet(dataname, datatitle, rooargs)
+        weight = lambda : 1.
+
     if -1 == nentries :
         nentries = tree.GetEntries()
     else :
@@ -113,14 +119,12 @@ def make_roodataset(dataname, datatitle, tree, nentries = -1, selection = '',
         inrange = True
         for var in treevars :
             var.set_var()
-            #if i < 10 :
-            #    print var.formula, var.is_in_range(), var.form(tree), var.value, var.var.getVal()
             if not var.is_in_range() :
                 inrange = False
                 noutofrange += 1
                 break
         if inrange :
-            dataset.add(rooargs)
+            dataset.add(rooargs, weight())
 
     print 'Read', nentries, 'entries from TTree', tree.GetName() + '.'
     print 'Selected', dataset.numEntries(), 'entries.'
@@ -143,13 +147,16 @@ def main() :
     argparser.add_argument('--inputfiles', nargs = '+', help = 'Name of the input file(s).')
     argparser.add_argument('--inputtree', help = 'Name of the TTree in the input file.')
     argparser.add_argument('--outputfile', help = 'Name of the output file.')
-    argparser.add_argument('--datasetname', help = 'Name of the RooDataSet to be made.')
-    argparser.add_argument('--datasettitle', help = 'Title of the RooDataSet to be made.')
+    argparser.add_argument('--datasetname', nargs = '?', default = 'dataset', help = 'Name of the RooDataSet to be made.')
+    argparser.add_argument('--datasettitle', nargs = '?', default = 'dataset', help = 'Title of the RooDataSet to be made.')
     argparser.add_argument('--selection', nargs = '?', default = '', help = 'Selection to apply to the TTree.')
-    argparser.add_argument('--nentries', nargs = '?', type = int, default = -1, 
+    argparser.add_argument('--nentries', nargs = '?', type = long, default = -1, 
                            help = 'Number of entries to read from the TTree')
     argparser.add_argument('--friendfiles', nargs = '*', help = 'Input files for the friend TTree.')
-    argparser.add_argument('--friendtree', help = 'Name of the friend TTree')
+    argparser.add_argument('--friendtree', nargs = '?', default = None, help = 'Name of the friend TTree')
+    argparser.add_argument('--ignorecompilefails', action = 'store_true',
+                           help = 'Ignore variables that don\'t compile with the given TTree')
+    argparser.add_argument('--weightvarname', nargs = '?', default = None, help = 'Name of the weight variable.')
     
     args, remainder = argparser.parse_known_args()
     variableslists = {}
@@ -182,8 +189,10 @@ Arguments should be the title, formula, xmin & xmax, & optionally the unit, eg:
         tree.AddFriend(friendtree)
 
     fout = ROOT.TFile.Open(args.outputfile, 'recreate')
-    dataset = make_roodataset(args.datasetname, args.datasettitle, tree,
-                              args.nentries, args.selection, **variables)
+    dataset = make_roodataset(dataname = args.datasetname, datatitle = args.datasettitle, tree = tree,
+                              nentries = args.nentries, selection = args.selection, 
+                              ignorecompilefails = args.ignorecompilefails, weightvarname = args.weightvarname,
+                              **variables)
     dataset.Write()
     fout.Close()
 
