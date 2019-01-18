@@ -1,4 +1,5 @@
 import ROOT
+from math import exp, log
 
 def equal_stats_binning(nbins, dataset, variable) :
     '''Get bins in 'variable' with equal stats.'''
@@ -18,3 +19,16 @@ def equal_stats_binning(nbins, dataset, variable) :
     vals[istart+1:] = [vals[istart+1:]]
     bins.append(dataset.get(0)[variable].getMax())
     return bins, vals
+
+def exponential_binning(nbins, tmin, tmax, tau) :
+    '''Get bins with exponentially increasing width.'''
+    rangeint = exp(-tmin/tau) - exp(-tmax/tau)
+    binarea = rangeint/nbins
+    bins = [tmin]
+    for i in xrange(1, nbins+1) :
+        try :
+            bins.append(bins[-1] - tau * log(1. - exp(bins[-1]/tau)*binarea))
+        except :
+            bins.append(tmax)
+            break
+    return bins
