@@ -1,6 +1,6 @@
 '''Utilities for plotting output.'''
 
-import ROOT
+import ROOT, subprocess
 
 def plot_fit(pdf, data, plotVar = None, pullCanvHeight = 0.2, canvArgs = (),
              dataPlotArgs = (), components = ()) :
@@ -78,3 +78,11 @@ def plot_fit(pdf, data, plotVar = None, pullCanvHeight = 0.2, canvArgs = (),
     pullHist.GetYaxis().SetTitleOffset(0.2)
     pullHist.GetYaxis().CenterTitle()
     return locals()
+
+def save_eps(canv, name) :
+    '''Save as .eps and remove the CreationDate line to avoid spurious diffs in git.'''
+
+    if not name.endswith('.eps') :
+        name += '.eps'
+    canv.SaveAs(name)
+    subprocess.call(['sed', '-i', '/CreationDate/d', name])

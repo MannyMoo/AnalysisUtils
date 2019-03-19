@@ -111,6 +111,7 @@ class Workspace(object) :
                 else :
                     strargs.append(str(arg))
             expr += '(' + ', '.join(strargs) + ')'
+        #print expr
         return self.workspace.factory(expr)
 
 def findarg(argset, ident) :
@@ -144,3 +145,14 @@ def get_component(pdf, ident) :
 
 def get_variable(pdf, ident) :
     return findarg(pdf.getVariables(), ident)
+
+def to_list(argset) :
+    '''Convert a RooArgSet to a python list.'''
+    
+    iterator = argset.iterator()
+    obj = iterator.Next()
+    arglist = []
+    while obj :
+        arglist.append(obj)
+        obj = iterator.Next()
+    return arglist
