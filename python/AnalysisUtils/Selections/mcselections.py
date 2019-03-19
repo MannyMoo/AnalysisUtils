@@ -1,7 +1,7 @@
 from PhysSelPython.Wrappers import Selection, SelectionSequence
 from PhysConf.Selections import RebuildSelection
 import StandardParticles
-from Configurables import FilterDesktop, CombineParticles
+from Configurables import FilterDesktop, CombineParticles, CheckPV
 
 mcbasicinputs = {'K+' : 'StdAllNoPIDsKaons',
                  'pi+' : 'StdAllNoPIDsPions',
@@ -65,3 +65,11 @@ def build_mc_unbiased_selection(decayDesc, arrow = '==>') :
                     RequiredSelections = list(inputs))
     selections[algname] = sel
     return sel
+
+def make_mc_unbiased_seq(desc, arrow = '==>') :
+    sel = build_mc_unbiased_selection(desc, arrow)
+    selseq = SelectionSequence(desc.get_full_alias() + '_MCUnbiasedSeq',
+                               TopSelection = sel)
+    seq = selseq.sequence()
+    seq.Members.insert(0, CheckPV())
+    return seq, selseq
