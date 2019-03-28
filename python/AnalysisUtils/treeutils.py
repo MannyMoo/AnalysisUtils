@@ -1,7 +1,11 @@
 '''Functions for working with TTrees.'''
 
-import ROOT, pprint, re
+import ROOT, pprint, re, random, string
 from array import array
+
+def random_string(n = 6, chars = string.ascii_uppercase + string.ascii_lowercase) :
+    '''Generate a random string of length n.'''
+    return ''.join(random.choice(chars) for _ in xrange(n))
 
 def is_tfile_ok(tfile) :
     '''Check if a TFile is OK (not a zombie and was closed properly).'''
@@ -145,7 +149,7 @@ class TreeFormula(object) :
     Works for TTrees and TChains.'''
 
     chainformulae = {}
-
+    
     def __init__(self, name, formula, tree) :
         self.form = ROOT.TTreeFormula(name, formula, tree)
         # Calling Compile sometimes breaks the TTreeFormula, for reasons unknown, so
@@ -166,8 +170,49 @@ class TreeFormula(object) :
         return self.ok
 
     def __call__(self, tree = None) :
+        '''Evaluate and return the formula.'''
         self.form.GetNdata()
         return self.form.EvalInstance()        
+
+    def __del__(self) :
+        treeid = id(self.form.GetTree())
+        if treeid in TreeFormula.chainformulae :
+            arr = TreeFormula.chainformulae[treeid]
+            arr.Remove(self.form)
+            if arr.GetSize() == 0 :
+                del TreeFormula.chainformulae[treeid]
+
+class TreeFormulaList(object) :
+    '''A list of TreeFormulas.'''
+
+    __slots__ = ('forms',)
+
+    def __init__(self, tree, formula1, formula2, *formulae) :
+        '''Takes the TTree and the formulae.'''
+        self.forms = tuple(TreeFormula(form, form, tree) for form in (formula1, formula2) + formulae)
+
+    def is_ok(self) :
+        '''Check that all formulae compile.'''
+        return all(f.ok for f in self.forms)
+
+    def __call__(self, tree = None) :
+        '''Get the formula values as a list.'''
+        return [f() for f in self.forms]
+
+
+class TreePVector(TreeFormulaList) :
+    '''Momentum 4-vector for a given particle name.'''
+    
+    __slots__ = ('forms',)
+
+    def __init__(self, tree, partname, pname = '_P') :
+        '''Takes the particle name and the tree. The branches used will be partname + pname + comp
+        for comp in XYZE. For true momenta, you can use pname = '_TRUEP_'.'''
+        TreeFormulaList.__init__(self, tree, *[partname + pname + comp for comp in 'XZYE'])
+        
+    def vector(self, tree = None) :
+        '''Get the momentum 4-vector as a TLorentzVector.'''
+        return ROOT.TLorentzVector(*self())
 
 def rename_branches(tree, *replacements) :
     '''Rename branches in a TTree. 'replacements' should be pairs of (pattern, replacement).
@@ -205,21 +250,32 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
         treecopy = tree.CopyTree(selection)
     return treecopy
 
+def tree_loop(tree, selection = None, getter = (lambda t, i : t.LoadTree(i))) :
+    '''Iterator over a TTree or TChain, calling getter(tree, i) for each entry
+    (default to call tree.LoadTree(i)) and yielding i, optionally only for 
+    entries passing the selection. The selection can either be a string or a 
+    TEventList.'''
+    
+    if not selection :
+        for i in xrange(tree.GetEntries()) :
+            getter(tree, i)
+            yield i
+    else :
+        if isinstance(selection, str) :
+            sellist = get_event_list(tree, selection = selection)
+        else :
+            sellist = selection
+        for i in xrange(sellist.GetN()) :
+            i = sellist.GetEntry(i)
+            getter(tree, i)
+            yield i
+        
 def tree_iter(tree, formula, selection = None) :
     '''Iterator over a TTree, returning the formula value, optionally only for 
     entries satisfying the selection.'''
-    form = TreeFormula(formula, formula, tree)
-    if not selection :
-        for i in xrange(tree.GetEntries()) :
-            tree.LoadTree(i)
-            yield form()
-    else :
-        sel = TreeFormula(selection, selection, tree)
-        for i in xrange(tree.GetEntries()) :
-            tree.LoadTree(i)
-            if not sel() :
-                continue
-            yield form()
+    form = TreeFormula('val_' + random_string(9), formula, tree)
+    for i in tree_loop(tree, selection) :
+        yield form()
 
 def tree_mean(tree, formula, selection = None, weight = None) :
     '''Mean of the formula over the TTree, optionally only for entries passing
@@ -233,21 +289,18 @@ def tree_mean(tree, formula, selection = None, weight = None) :
             tot += val
             totsq += val**2.
     else :
-        weightiter = tree_iter(tree, weight, selection)
-        valiter = tree_iter(tree, formula, selection)
+        valform = TreeFormula('val_' + random_string(9), formula, tree)
+        weightform = TreeFormula('weight_' + random_string(9), weight, tree)
         sumw2 = 0.
         ncand = 0
-        while True :
-            try :
-                weight = weightiter.next()
-                val = valiter.next()
-                n += weight
-                tot += val * weight
-                totsq += val**2. * weight
-                sumw2 += weight**2.
-                ncand += 1
-            except StopIteration :
-                break
+        for i in tree_loop(tree, selection) :
+            weight = weightform()
+            val = valform()
+            n += weight
+            tot += val * weight
+            totsq += val**2. * weight
+            sumw2 += weight**2.
+            ncand += 1
     mean = tot/n
     meansq = totsq/n
     err = ((meansq - mean**2)/n)**.5
@@ -256,3 +309,54 @@ def tree_mean(tree, formula, selection = None, weight = None) :
         neff = n**2/sumw2
         err *= (ncand/neff)**.5
     return mean, err
+
+def get_event_list(tree, selection, setlist = False, listname = '') :
+    '''Get the TEventList of entries that pass the selection. If setlist = True, the TTree's
+    event list is set to this.'''
+    if not listname :
+        listname = tree.GetName() + '_sellist_' + random_string()
+    evtlist = ROOT.TEventList(listname)
+    # TTree::Draw resets the Notify list for TChains, so set it back after.
+    notify = tree.GetNotify() if hasattr(tree, 'GetNotify') else None
+    tree.Draw('>>' + evtlist.GetName(), selection)
+    if setlist :
+        tree.SetEventList(evtlist)
+    if notify :
+        tree.SetNotify(notify)
+    return evtlist
+
+def get_unique_events(tree, listname = None, seedoffset = 0, setlist = False,
+                      checkbranches = ('eventNumber', 'runNumber'), selection = None) :
+    '''Get one entry per event from the given tree. When there's more than one with the same
+    event number, events are picked at random using 
+    int(str(eventNumber) + str(runNumber)) + seedoffset as seed. Note that the algorithm
+    assumes that candidates in the same event are in consecutive entries in the TTree.'''
+
+    nentries = tree.GetEntries()
+    checker = TreeFormulaList(tree, *checkbranches)
+    rndm = ROOT.TRandom3()
+    if not listname :
+        listname = tree.GetName() + '_uniqueevtlist_' + random_string()
+    evtlist = ROOT.TEventList(listname)
+    treeloop = tree_loop(tree, selection)
+    while True :
+        try :
+            ievt = treeloop.next()
+            checkvals = checker()
+            nextvals = list(checkvals)
+            evts = []
+            while nextvals == checkvals :
+                evts.append(ievt)
+                ievt = treeloop.next()
+                nextvals = checker()
+            if len(evts) == 1 :
+                evtlist.Enter(evts[0])
+                continue
+            rndm.SetSeed(long(''.join(map(lambda v : str(int(v)), checkvals))) + seedoffset)
+            ival = int(rndm.Rndm()*len(evts))
+            evtlist.Enter(evts[ival])
+        except StopIteration :
+            break
+    if setlist :
+        tree.SetEventList(evtlist)
+    return evtlist

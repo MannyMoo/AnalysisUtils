@@ -39,6 +39,10 @@ class DataLibrary(object) :
         '''Get the selection of the TTree if it has one, else return the default selection.'''
         return self._getattr(tree, 'selection')
 
+    def datasets(self) :
+        '''Get the sorted list of dataset names.'''
+        return sorted(self.datapaths.keys())
+
     def get_data_info(self, name) :
         '''Get the info dict on the dataset of the given name.'''
         try :
@@ -115,6 +119,69 @@ class DataLibrary(object) :
         dataset.Write()
         fout.Close()
         return dataset
+
+    def check_dataset(self, name) :
+        '''Check that all files exist, are unique, contain the required TTree, and all the TTrees have 
+        the same branches.'''
+        info = self.get_data_info(name)
+        success = True
+
+        # Check files are unique
+        filesset = set(info['files'])
+        if len(info['files']) != len(filesset) :
+            print 'Some files are duplicated'
+            success = False
+            for f in filesset :
+                fcount = info['files'].count(f)
+                if fcount != 1 :
+                    print 'File', f, 'appears', fcount, 'times'
+
+        branchnames = []
+        for f in info['files'] :
+            tf = ROOT.TFile.Open(f)
+            # Check file can be opened.
+            if not tf :
+                print 'File', f, "can't be opened!"
+                success = False
+                continue
+            if tf.IsZombie() :
+                print 'File', f, "can't be opened!"
+                success = False
+                continue
+            # Check it contains the TTree.
+            tree = tf.Get(info['tree'])
+            if not tree :
+                print 'File', f, "doesn't contain a TTree named", repr(info['tree'])
+                success = False
+                tf.Close()
+                continue
+            # Check it has the same branches as the other TTrees.
+            if not branchnames :
+                branchnames = set(br.GetName() for br in tree.GetListOfBranches())
+            thesenames = set(br.GetName() for br in tree.GetListOfBranches())
+            if branchnames != thesenames :
+                print 'Branches in file', f, "don't match the first TTree:"
+                print 'Branches in this TTree not in the first TTree:', thesenames.difference(branchnames)
+                print 'Branches in the first TTree not in this TTree:', branchnames.difference(thesenames)
+                success = False
+            tf.Close()
+        return success
+
+    def check_all_datasets(self) :
+        '''Check all datasets for integrity. Returns a list of OK datasets, and a list of
+        datasets with problems.'''
+        successful = []
+        failed = []
+        for dataset in self.datasets() :
+            print 'Check', dataset
+            if not self.check_dataset(dataset) :
+                print 'Failed!'
+                failed.append(dataset)
+            else :
+                print 'OK'
+                successful.append(dataset)
+            print
+        return successful, failed
 
     def make_getters(self) :
         '''Define getter methods for every TTree dataset and corresponding RooDataSet.'''
