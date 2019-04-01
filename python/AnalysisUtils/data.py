@@ -4,6 +4,7 @@ import os, ROOT, pprint
 from AnalysisUtils.makeroodataset import make_roodataset
 from AnalysisUtils.treeutils import make_chain, set_prefix_aliases, check_formula_compiles
 from array import array
+from copy import deepcopy
 
 class DataLibrary(object) :
     '''Contains info on datasets and functions to retrieve them.'''
@@ -18,12 +19,12 @@ class DataLibrary(object) :
             return self.method(*self.args)
 
     def __init__(self, datapaths, variables, ignorecompilefails = False, selection = '', varnames = ()) :
-        self.datapaths = datapaths
+        self.datapaths = {}
         self.variables = variables
         self.varnames = varnames
         self.selection = selection
         self.ignorecompilefails = ignorecompilefails
-        self.make_getters()
+        self.make_getters(datapaths)
 
     def _getattr(self, tree, attr) :
         '''Get an attr from the tree if it has it, else return the DataLibrary's one.'''
@@ -120,6 +121,26 @@ class DataLibrary(object) :
         fout.Close()
         return dataset
 
+    def add_merged_datasets(self, mergedsub, name1, name2) :
+        '''Merge datasets containing name1 or name2 in their name into a new dataset
+        of files from both datasets.'''
+
+        # Make merged datasets for both polarities.
+        mergeddata = {}
+        for name, data in self.datapaths.items() :
+            if not (name1 in name or name2 in name) or not 'files' in data :
+                continue
+            mergedname = name.replace(name1, mergedsub).replace(name2, mergedsub)
+            if mergedname in self.datapaths or mergedname in mergeddata :
+                continue
+            merged = deepcopy(data)
+            othername = name.replace(name1, name2) if name1 in name else name.replace(name2, name1)
+            if not othername in self.datapaths :
+                continue
+            merged['files'] += self.datapaths[othername]['files']
+            mergeddata[mergedname] = merged
+        self.make_getters(mergeddata)
+
     def check_dataset(self, name) :
         '''Check that all files exist, are unique, contain the required TTree, and all the TTrees have 
         the same branches.'''
@@ -183,9 +204,10 @@ class DataLibrary(object) :
             print
         return successful, failed
 
-    def make_getters(self) :
+    def make_getters(self, datapaths) :
         '''Define getter methods for every TTree dataset and corresponding RooDataSet.'''
-        for name in self.datapaths :
+        self.datapaths.update(datapaths)
+        for name in datapaths :
             setattr(self, name, DataLibrary.DataGetter(self.get_data, name))
             setattr(self, name + '_Dataset', DataLibrary.DataGetter(self.get_dataset, name))
 

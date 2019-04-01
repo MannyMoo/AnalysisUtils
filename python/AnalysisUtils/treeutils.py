@@ -175,11 +175,14 @@ class TreeFormula(object) :
         return self.form.EvalInstance()        
 
     def __del__(self) :
+        '''For TChains, remove the TTreeFormula from the TChain's notify list.
+        Delete the notify list if it's empty.'''
         treeid = id(self.form.GetTree())
         if treeid in TreeFormula.chainformulae :
             arr = TreeFormula.chainformulae[treeid]
             arr.Remove(self.form)
             if arr.GetSize() == 0 :
+                self.form.GetTree().SetNotify(None)
                 del TreeFormula.chainformulae[treeid]
 
 class TreeFormulaList(object) :
