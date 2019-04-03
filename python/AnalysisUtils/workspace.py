@@ -82,7 +82,8 @@ class Workspace(object) :
         else :
             form = name
             if None != xmin and None != xmax :
-                form += '[' + ', '.join(name + str(i) + '=' + str(i) for i in xrange(int(xmin), int(xmax)+1)) + ']'
+                zlen = len(str(int(xmax)))
+                form += '[' + ', '.join(name + str(i).zfill(zlen) + '=' + str(i) for i in xrange(int(xmin), int(xmax)+1)) + ']'
             else :
                 form += '[]'
             var = self.workspace.factory(form)
