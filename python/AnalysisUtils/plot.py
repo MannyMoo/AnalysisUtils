@@ -3,7 +3,7 @@
 import ROOT, subprocess
 
 def plot_fit(pdf, data, plotVar = None, pullCanvHeight = 0.2, canvArgs = (),
-             dataPlotArgs = (), components = ()) :
+             dataPlotArgs = (), components = (), legpos = (0.7, 0.7, 0.95, 0.95)) :
     '''Plot the fit over the data for the given plotVar with the pull below. If
     pullCanvHeight == 0. the pull isn't drawn. If pdf.extendMode() is True, the fit PDF
     is normalised according to the fitted yields of the extended PDF, else it's
@@ -30,9 +30,16 @@ def plot_fit(pdf, data, plotVar = None, pullCanvHeight = 0.2, canvArgs = (),
 
     mainFrame = plotVar.frame()
     data.plotOn(mainFrame, *dataPlotArgs)
+    leg = None
+    legentries = []
     if components :
+        names = filter(None, (filter(lambda arg : arg.GetName() == 'Name', comp) for comp in components))
+        if names :
+            leg = ROOT.TLegend(*legpos)
         for component in components :
-            pdf.plotOn(mainFrame, *component)
+            compplot = pdf.plotOn(mainFrame, *component)
+            compname = filter(lambda arg : arg.GetName() == 'Name', component)
+            legentries.append([compplot, compname[0].getString(0)])
     if hasattr(pdf, 'extendMode') and pdf.extendMode() != 0 :
         # Change from RooAbsReal.RelativeExtended, as given in the manual, as it doesn't
         # exist.
@@ -41,6 +48,10 @@ def plot_fit(pdf, data, plotVar = None, pullCanvHeight = 0.2, canvArgs = (),
         pdf.plotOn(mainFrame)
     mainPad.cd()
     mainFrame.Draw()
+    if leg :
+        for compplot, name in legentries :
+            leg.AddEntry(name, name)
+        leg.Draw()
     hdata = filter(lambda prim : isinstance(prim, ROOT.TH1), mainPad.GetListOfPrimitives())[0]
     hdata.SetTitle('')
     hdata.GetXaxis().SetTitleSize(0.05)
