@@ -134,6 +134,31 @@ def make_roodataset(dataname, datatitle, tree, nentries = -1, selection = '',
 
     return dataset
 
+def make_roodatahist(name, roodata, variable, selection = None, nbins = 100, xmin = None, xmax = None) :
+    '''Make a 1D binned RooDataHist from an unbinned RooDataSet for the give variable.
+    'selection' can be a dictionary with variable names as keys and (min, max) as values,
+    or a function that expects a RooArgSet and returns a bool.'''
+
+    if not selection :
+        selection = lambda args : True
+    elif isinstance(selection, dict) :
+        _selection = selection
+        selection = lambda args : all(cut[0] <= args[var].getVal() < cut[1] for var, cut in _selection.items())
+    
+    if None == xmin :
+        xmin = variable.getMin()
+    if None == xmax :
+        xmax = variable.getMax()
+
+    varname = variable.GetName()
+    h = ROOT.TH1F(name + '_histo', '', nbins, xmin, xmax)
+    for i in xrange(roodata.numEntries()) :
+        args = roodata.get(i)
+        if not selection(args) :
+            continue
+        h.Fill(args[varname].getVal(), roodata.weight())
+    return ROOT.RooDataHist(name, name, ROOT.RooArgList(variable), h)
+
 def main() :
     '''Read the input file, etc, from the commandline and build the RooDataSet. 
     Variables to be read into the RooDataSet are passed as additional commandline

@@ -1,8 +1,8 @@
 '''Functions to access all the relevant datasets for the analysis, both TTrees and RooDataSets.'''
 
-import os, ROOT, pprint
-from AnalysisUtils.makeroodataset import make_roodataset
-from AnalysisUtils.treeutils import make_chain, set_prefix_aliases, check_formula_compiles
+import os, ROOT, pprint, cppyy
+from AnalysisUtils.makeroodataset import make_roodataset, make_roodatahist
+from AnalysisUtils.treeutils import make_chain, set_prefix_aliases, check_formula_compiles, is_tfile_ok
 from array import array
 from copy import deepcopy
 
@@ -254,3 +254,107 @@ class DataLibrary(object) :
         tree.Draw('{formY} : {form} >> {hname}'.format(**locals()), selection, drawopt)
         return h
 
+class BinnedFitData(object) :
+
+    def __init__(self, name, outputdir, workspace, roodata, variable, binvariable, bins, 
+                 binvariable2 = None, bins2 = None, nbinsx = 100, xmin = None, xmax = None) :
+        self.name = name
+        if not os.path.exists(outputdir) :
+            os.makedirs(outputdir)
+        self.outputfname = os.path.join(outputdir, name + '.root')
+        self.workspace = workspace
+        self.roodata = roodata
+        self.variable = variable
+        self.nbinsx = nbinsx
+        self.xmin = xmin if None != xmin else variable.getMin()
+        self.xmax = xmax if None != xmax else variable.getMax()
+        self.binvariable = binvariable
+        self.bins = bins
+        self.binvariable2 = binvariable2
+        self.bins2 = bins2
+        self.selections = {}
+        self.catvals = {}
+        if not binvariable2 :
+            zlen = len(str(len(self.bins)-1))
+            for ibin, (binmin, binmax) in enumerate(zip(self.bins[:-1], self.bins[1:])) :
+                binname = name + '_bin_' + str(ibin).zfill(zlen)
+                self.selections[binname] = {binvariable.GetName() : (binmin, binmax)}
+                self.catvals[binname] = name + '_bin' + str(ibin).zfill(zlen)
+        else :
+            nbins = len(self.bins)-1
+            nbins2 = len(self.bins2)-1
+            ncats = nbins * nbins2 - 1
+            zlencat = len(str(ncats))
+            zlen = len(str(nbins))
+            zlen2 = len(str(nbins2))
+            for ibin, (binmin, binmax) in enumerate(zip(self.bins[:-1], self.bins[1:])) :
+                for ibin2, (binmin2, binmax2) in enumerate(zip(self.bins2[:-1], self.bins2[1:])) :
+                    binname = name + '_bin_{0}_{1}'.format(str(ibin.zfill(zlen)), str(ibin2.zfill(zlen2)))
+                    self.selections[binname] = {binvariable.GetName() : (binmin, binmax),
+                                                binvariable2.GetName() : (binmin2, binmax2)}
+                    self.catvals[binname] = name + '_bin' + str(ibin * nbins2 + ibin2).zfill(zlencat)
+        self.binvar = None
+        self.datasets = {}
+        self.meanvals = {}
+        self.datahist = None
+
+        print self.selections
+
+    def build(self) :
+        fout = ROOT.TFile.Open(self.outputfname, 'recreate')
+        
+        self.binvar = self.workspace.roovar(self.name + '_bin', xmin = 0, xmax = len(self.selections)-1,
+                                            discrete = True)
+        self.binvar.Write()
+
+        histmap = cppyy.makeClass('std::map<std::string, RooDataHist*>')()
+        Histpair = cppyy.makeClass('pair<const string,RooDataHist*>')
+
+        for binname, selection in self.selections.items() :
+            catval = self.catvals[binname]
+            datahist = make_roodatahist(binname, self.roodata, self.variable, selection = selection,
+                                        nbins = self.nbinsx, xmin = self.xmin, xmax = self.xmax)
+            datahist.Write()
+            self.datasets[binname] = datahist
+            histmap.insert(Histpair(catval, datahist))
+            meanvals = {name : 0. for name in selection}
+            n = 0
+            for i in xrange(self.roodata.numEntries()) :
+                args = self.roodata.get(i)
+                if not all(cut[0] <= args[name].getVal() < cut[1] for name, cut in selection.items()) :
+                    continue
+                weight = self.roodata.weight()
+                for name in selection :
+                    meanvals[name] += args[name].getVal() * weight
+                n += weight
+            if n > 0 :
+                for name in selection :
+                    meanvals[name] /= n
+            self.meanvals[binname] = meanvals
+        self.datahist = ROOT.RooDataHist(self.name, self.name, ROOT.RooArgList(self.variable),
+                                         self.binvar, histmap)
+        self.datahist.Write()
+        ROOT.TNamed(self.name + '_meanvals', repr(self.meanvals)).Write()
+        fout.Close()
+
+    def retrieve(self) :
+        if not is_tfile_ok(self.outputfname) :
+            return False
+        fout = ROOT.TFile.Open(self.outputfname)
+        self.datahist = fout.Get(self.name)
+        self.datasets = {binname : fout.Get(binname) for binname in self.selections}
+        self.meanvals = fout.Get(self.name + '_meanvals')
+        self.binvar = fout.Get(self.name + '_bin')
+        fout.Close()
+        if not all(list(self.datasets.values()) + [self.datahist, self.meanvals, self.binvar]) :
+            self.datahist = None
+            self.datasets = {}
+            self.meanvals = {}
+            self.binvar = None
+            return False
+        self.meanvals = eval(self.meanvals.GetTitle())
+        return True
+
+    def get(self, update = False) :
+        if update or not self.retrieve() :
+            self.build()

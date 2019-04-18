@@ -11,7 +11,7 @@ mcbasicinputs = {'K+' : 'StdAllNoPIDsKaons',
 
 selections = {}
 
-def build_mc_unbiased_selection(decayDesc, arrow = '==>') :
+def build_mc_unbiased_selection(decayDesc, arrow = '==>', refitpvs = True) :
     '''Make a selection sequence for the given decay descriptor that has no cuts besides
     truth matching.'''
 
@@ -47,7 +47,7 @@ def build_mc_unbiased_selection(decayDesc, arrow = '==>') :
     for daughter in decayDescCC.daughters :
         originaldaughtercc = daughter.cc
         daughter.cc = True
-        sel = build_mc_unbiased_selection(daughter, arrow)
+        sel = build_mc_unbiased_selection(daughter, arrow, refitpvs)
         daughter.cc = originaldaughtercc
         inputs.add(sel)
         #daughter.caret = True
@@ -60,14 +60,15 @@ def build_mc_unbiased_selection(decayDesc, arrow = '==>') :
     comb.MotherCut = 'mcMatch({0!r})'.format(decayDescCC.to_string(arrow))
     comb.Preambulo = preamble
     comb.DaughtersCuts = daughtercuts
+    comb.ReFitPVs = refitpvs
     sel = Selection(algname,
                     Algorithm = comb,
                     RequiredSelections = list(inputs))
     selections[algname] = sel
     return sel
 
-def make_mc_unbiased_seq(desc, arrow = '==>') :
-    sel = build_mc_unbiased_selection(desc, arrow)
+def make_mc_unbiased_seq(desc, arrow = '==>', refitpvs = True) :
+    sel = build_mc_unbiased_selection(desc, arrow, refitpvs)
     selseq = SelectionSequence(desc.get_full_alias() + '_MCUnbiasedSeq',
                                TopSelection = sel)
     seq = selseq.sequence()
