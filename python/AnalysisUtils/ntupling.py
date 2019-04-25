@@ -4,7 +4,7 @@ from AnalysisUtils.Selections.mcselections import build_mc_unbiased_selection
 
 def _make_tuple(desc, suff, ToolList, TupleType) :
     dtt = TupleType(desc.get_full_alias() + suff)
-    dtt.ToolList = ToolList
+    dtt.ToolList = list(ToolList)
     dtt.Decay = desc.to_string(carets = True)
     dtt.addBranches(desc.branches())
     return dtt
