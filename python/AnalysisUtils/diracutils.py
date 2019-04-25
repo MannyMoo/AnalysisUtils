@@ -1,4 +1,4 @@
-import subprocess, re, pprint
+import subprocess, re, pprint, os
 from collections import defaultdict
 
 def dirac_call(*args, **kwargs) :
@@ -6,8 +6,23 @@ def dirac_call(*args, **kwargs) :
     and exit code. By default an exception is raised if the exit code of the call
     isn't zero. This can be overridden by passing raiseonfailure = False.'''
 
-    proc = subprocess.Popen(('lb-run', 'LHCbDirac/prod') + args,
+    # proc = subprocess.Popen(('lb-run', 'LHCbDirac/prod') + args,
+    #                         stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+
+    env = {k : os.environ[k] for k in ('HOME', 'TERM', 'USER')}
+    env['PATH'] = '/usr/sue/bin:/bin:/usr/bin:/usr/sbin:/sbin'
+
+    proc = subprocess.Popen(('which', 'LbLogin.sh'),
                             stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+    stdout, stderr = proc.communicate()
+    lblogin = stdout.strip()
+
+    cmd = '''. {0} >& /dev/null
+lb-run -c best LHCbDirac/prod {1}'''.format(lblogin,
+                                            ' '.join(repr(arg) for arg in args))
+
+    proc = subprocess.Popen(('bash', '-c', cmd), env = env, stdout = subprocess.PIPE,
+                            stderr = subprocess.PIPE)
     stdout, stderr = proc.communicate()
     exitcode = proc.poll()
     returnval = {'stdout' : stdout, 'stderr' : stderr, 'exitcode' : exitcode}
