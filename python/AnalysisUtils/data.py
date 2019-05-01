@@ -1,6 +1,6 @@
 '''Functions to access all the relevant datasets for the analysis, both TTrees and RooDataSets.'''
 
-import os, ROOT, pprint, cppyy
+import os, ROOT, pprint, cppyy, glob, re
 from AnalysisUtils.makeroodataset import make_roodataset, make_roodatahist
 from AnalysisUtils.treeutils import make_chain, set_prefix_aliases, check_formula_compiles, is_tfile_ok
 from array import array
@@ -54,18 +54,37 @@ class DataLibrary(object) :
         except KeyError :
             raise ValueError('Unknown data type: ' + repr(name))
 
+    def add_friends(self, name) :
+        '''Add friends of the given dataset from the files under its friends directory.'''
+        info = self._get_data_info(name)
+        friendsdir = self.friends_directory(name)
+        if not os.path.exists(friendsdir) :
+            return
+        friends = info.get('friends', [])
+        for friendname in os.listdir(friendsdir) :
+            files = sorted(glob.glob(os.path.join(friendsdir, friendname, '*.root')))
+            if not files :
+                continue
+            fname = os.path.split(files[0])[1]
+            # Take the name of the file as the name of the TTree
+            treename = fname[:-len('.root')]
+            # Check if the file ends with _[0-9]+, in which case remove it.
+            if re.search('_[0-9]+\.root', fname) :
+                treename = '_'.join(treename.split('_')[:-1])
+            friendname = name + '_' + friendname
+            if not friendname in self.datapaths :
+                self.make_getters({friendname : {'files' : files,
+                                                 'tree' : treename}})
+            if not friendname in friends :
+                friends.append(friendname)
+        if friends :
+            info['friends'] = friends
+            self.datapaths[name] = info
+
     def get_data_info(self, name) :
         '''Get the info dict on the dataset of the given name.'''
-        # Add the SelectedTree created by make_roodataset as a friend, if it exists.
+        self.add_friends(name)
         info = self._get_data_info(name)
-        friends = info.get('friends', [])
-        selectedname = name + '_SelectedTree'
-        selectedtree = self.selected_file_name(name)
-        if os.path.exists(selectedtree) and not selectedname in friends :
-            if not selectedname in self.datapaths :
-                self.make_getters({selectedname : {'files' : [selectedtree], 'tree' : 'SelectedTree'}})
-            friends.append(selectedname)
-            info['friends'] = friends
         return info
 
     def get_data(self, name) :
@@ -96,10 +115,23 @@ class DataLibrary(object) :
             dirname = os.path.dirname(info['files'][0])
         return os.path.join(dirname, dataname + '_Dataset.root')
 
+    def friends_directory(self, dataname) :
+        '''Get the directory containing friends of this dataset that will be automatically loaded.'''
+        return self.dataset_file_name(dataname)[:-len('_Dataset.root')] + '_Friends'
+
+    def friend_file_name(self, dataname, friendname, treename, number = None) :
+        '''Get the name of a file that will be automatically added as a friend to the given dataset,
+        optionally with a number. 'treename' is the name of the TTree it's expected to contain.'''
+        if None != number :
+            fname = treename + '_' + str(number) + '.root'
+        else :
+            fname = treename + '.root'
+        return os.path.join(self.friends_directory(dataname), friendname, fname)
+
     def selected_file_name(self, dataname) :
         '''Get the name of the file containing the TTree of range and selection
         variables created when making the RooDataSet.'''
-        return self.dataset_file_name(dataname)[:-len('_Dataset.root')] + '_SelectedTree.root'
+        return os.path.join(self.friends_directory(dataname), 'SelectedTree', 'SelectedTree.root')
 
     def get_dataset(self, dataname, varnames = None, update = False) :
         '''Get the RooDataSet of the given name. It's created/updated on demand. varnames is the 
@@ -132,6 +164,7 @@ class DataLibrary(object) :
                                   ignorecompilefails = self.ignorecompilefails,
                                   selection = self._selection(tree),
                                   selectedtreefile = self.selected_file_name(dataname),
+                                  selectedtreename = 'SelectedTree',
                                   **dict((var, variables[var]) for var in varnames))
 
         fname = self.dataset_file_name(dataname)
