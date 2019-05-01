@@ -119,14 +119,18 @@ class DataLibrary(object) :
         '''Get the directory containing friends of this dataset that will be automatically loaded.'''
         return self.dataset_file_name(dataname)[:-len('_Dataset.root')] + '_Friends'
 
-    def friend_file_name(self, dataname, friendname, treename, number = None) :
+    def friend_file_name(self, dataname, friendname, treename, number = None, makedir = False) :
         '''Get the name of a file that will be automatically added as a friend to the given dataset,
-        optionally with a number. 'treename' is the name of the TTree it's expected to contain.'''
+        optionally with a number. 'treename' is the name of the TTree it's expected to contain.
+        If makedir = True then the directory to hold the file is created.'''
         if None != number :
             fname = treename + '_' + str(number) + '.root'
         else :
             fname = treename + '.root'
-        return os.path.join(self.friends_directory(dataname), friendname, fname)
+        dirname = os.path.join(self.friends_directory(dataname), friendname)
+        if makedir and not os.path.exists(dirname) :
+            os.makedirs(dirname)
+        return os.path.join(dirname, fname)
 
     def selected_file_name(self, dataname) :
         '''Get the name of the file containing the TTree of range and selection
