@@ -3,7 +3,7 @@
 '''Functionality needed to make a RooDataSet from a TTree.'''
 
 import ROOT
-from AnalysisUtils.treeutils import TreeFormula, make_chain
+from AnalysisUtils.treeutils import TreeFormula, make_chain, TreeBranchAdder
 
 class TreeVar(object) :
     '''Proxy class between a variable, or function of variables, in a TTree and a RooRealVar.'''
@@ -55,7 +55,8 @@ class TreeVar(object) :
         return self._str()
                                                                       
 def make_roodataset(dataname, datatitle, tree, nentries = -1, selection = '', 
-                    ignorecompilefails = False, weightvarname = None, **variables) :
+                    ignorecompilefails = False, weightvarname = None, selectedtreefile = None, 
+                    selectedtreename = 'SelectedTree', **variables) :
     '''dataname: name of the RooDataSet to be made.
     datatitle: title of the RooDataSet.
     tree: TTree to take the data from.
@@ -108,6 +109,24 @@ def make_roodataset(dataname, datatitle, tree, nentries = -1, selection = '',
     else :
         nentries = min(tree.GetEntries(), nentries)
 
+    if selectedtreefile :
+        selectedtreefile = ROOT.TFile.Open(selectedtreefile, 'recreate')
+        selectedtree = ROOT.TTree(selectedtreename, selectedtreename)
+        branchadders = [TreeBranchAdder(selectedtree, 'inrange_' + var.var.GetName(),
+                                        (lambda var : [int(var.is_in_range())]), type = 'i',
+                                        args = (var,)) for var in treevars]
+        branchadders += [TreeBranchAdder(selectedtree, 'inrange_all',
+                                         (lambda vars : [int(all(var.is_in_range() for var in vars))]),
+                                         type = 'i', args = (treevars,)),
+                         TreeBranchAdder(selectedtree, 'selection_pass', (lambda sel : [int(sel())]),
+                                         type = 'i', args = (selvar,))]
+        def fill_selected_tree() :
+            for adder in branchadders :
+                adder.set_value()
+            selectedtree.Fill()
+    else :
+        fill_selected_tree = lambda : None
+
     nfailsel = 0
     noutofrange = 0
 
@@ -121,16 +140,20 @@ def make_roodataset(dataname, datatitle, tree, nentries = -1, selection = '',
             var.set_var()
             if not var.is_in_range() :
                 inrange = False
-                noutofrange += 1
-                break
+        fill_selected_tree()
         if inrange :
             dataset.add(rooargs, weight())
-
+        else :
+            noutofrange += 1
     print 'Read', nentries, 'entries from TTree', tree.GetName() + '.'
     print 'Selected', dataset.numEntries(), 'entries.'
     if selection :
         print 'Rejected', nfailsel, 'entries using selection', repr(selection) + '.'
     print 'Rejected', noutofrange, 'entries for being out of range.'
+
+    if selectedtreefile :
+        selectedtree.Write()
+        selectedtreefile.Close()
 
     return dataset
 

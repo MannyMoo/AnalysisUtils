@@ -40,12 +40,13 @@ def plot_fit(pdf, data, plotVar = None, pullCanvHeight = 0.2, canvArgs = (),
             compplot = pdf.plotOn(mainFrame, *component)
             compname = filter(lambda arg : arg.GetName() == 'Name', component)
             legentries.append([compplot, compname[0].getString(0)])
-    if hasattr(pdf, 'extendMode') and pdf.extendMode() != 0 :
-        # Change from RooAbsReal.RelativeExtended, as given in the manual, as it doesn't
-        # exist.
-        pdf.plotOn(mainFrame, ROOT.RooFit.Normalization(1.0, ROOT.RooAbsReal.RelativeExpected))
-    else :
-        pdf.plotOn(mainFrame)
+    # if hasattr(pdf, 'extendMode') and pdf.extendMode() != 0 :
+    #     # Change from RooAbsReal.RelativeExtended, as given in the manual, as it doesn't
+    #     # exist.
+    #     pdf.plotOn(mainFrame, ROOT.RooFit.Normalization(1.0, ROOT.RooAbsReal.RelativeExpected))
+    # else :
+    pdf.plotOn(mainFrame)
+
     mainPad.cd()
     mainFrame.Draw()
     if leg :

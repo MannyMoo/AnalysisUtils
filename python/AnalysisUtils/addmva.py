@@ -48,14 +48,17 @@ class MVACalc(object) :
             self.tmvavararrays[key][0] = treeval()
         return self.reader.EvaluateMVA(self.weightsvar)
 
-def make_mva_tree(inputtree, weightsfile, weightsvar, outputtree, outputfile, maxentries = -1) :
+def make_mva_tree(inputtree, weightsfile, weightsvar, outputtree, outputfile, maxentries = -1, branchname = None) :
     '''Make a TTree containing the MVA variable values for the given input tree.'''
     mvacalc = MVACalc(inputtree, weightsfile, weightsvar)
+
+    if not branchname :
+        branchname = weightsvar
 
     outputfile = ROOT.TFile.Open(outputfile, 'recreate')
     outputtree = ROOT.TTree(outputtree, outputtree)
     mvavar = array('f', [0])
-    outputtree.Branch(weightsvar, mvavar, weightsvar + '/F')
+    outputtree.Branch(branchname, mvavar, branchname + '/F')
 
     if maxentries == -1 :
         maxentries = inputtree.GetEntries()

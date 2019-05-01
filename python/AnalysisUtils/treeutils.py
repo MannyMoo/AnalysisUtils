@@ -25,16 +25,24 @@ def make_chain(treename, *fnames) :
         chain.Add(fname)
     return chain
 
-def set_prefix_aliases(tree, **aliases) :
-    '''Scan over branches in the tree and if they contain any of the keys in 'aliases',
-    create an alias with those keys replaced by the corresponding values in 'aliases'.
+def set_prefix_aliases(tree, aliases) :
+    '''Scan over branches in the tree and if they start with one of the keys in 'aliases',
+    create an alias with that key replaced by the corresponding value in 'aliases'.
+    Only the first matching key is replaced, and only at the start of the string.
     This allows you to easily work with TTrees with different name prefixes.'''
     for branch in tree.GetListOfBranches() :
         newname = branch.GetName()
+        changed = False
         for name, alias in aliases.items() :
-            if name in newname :
-                newname = newname.replace(name, alias)
-        tree.SetAlias(newname, branch.GetName())
+            if newname.startswith(name) :
+                #print name, alias, newname
+                newname = alias + newname[len(name):]
+                changed = True
+                break
+        #print newname, branch.GetName()
+        #print
+        if changed :
+            tree.SetAlias(newname, branch.GetName())
 
 def identifier(tree, i, *branches) :
     '''Get an identifier for entry i in the tree using the given branch names.'''
@@ -363,3 +371,49 @@ def get_unique_events(tree, listname = None, seedoffset = 0, setlist = False,
     if setlist :
         tree.SetEventList(evtlist)
     return evtlist
+
+class TreeBranchAdder(object) :
+    '''Add a branch to a TTree.'''
+
+    def __init__(self, tree, name, function, type = 'f', length = 1, maxlength = 1, args = (), kwargs = {}) :
+        '''tree: the TTree to add the branch to.
+        name: name of the branch.
+        function: must return a list of values for the branch when called. It will be passed *args and **kwargs.
+        type: data type of the branch.
+        length: length of the branch. If a string, the branch is variable length and the string is used as
+          the name of the length branch.
+        maxlength: maximum length of the branch.
+        args: args to be passed to function.
+        kwargs: kwrags to be passed to function.
+        '''
+
+        self.tree = tree
+        self.name = name
+        self.values = array(type, [0] * maxlength)
+        self.type = type
+        if isinstance(length, str) :
+            self.length = TreeBranchAdder(tree, length, function = lambda : len(self.values), type = 'i')
+            self.set_length = lambda : self.length.set_value()
+            self.fill_length = lambda : self.length.fill()
+        else :
+            self.length = length
+            self.set_length = lambda : True
+            self.fill_length = lambda : True
+        self.maxlength = maxlength
+        self.function = function
+        self.args = tuple(args)
+        self.kwargs = dict(kwargs)
+        self.branch = tree.Branch(self.name, self.values,
+                                  '{0}[{1}]/{2}'.format(self.name, self.length, self.type.upper()))
+
+    def set_value(self) :
+        '''Set the values of the branch array, and length branch if appropriate.'''
+        vals = self.function(*self.args, **self.kwargs)[:self.maxlength]
+        del self.values[:]
+        self.values.fromlist(vals)
+        self.set_length()
+
+    def fill(self) :
+        '''Fill the branch, and the length branch if appropriate.'''
+        self.branch.Fill()
+        self.fill_length()

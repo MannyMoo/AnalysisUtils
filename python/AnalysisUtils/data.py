@@ -44,22 +44,36 @@ class DataLibrary(object) :
         '''Get the sorted list of dataset names.'''
         return sorted(self.datapaths.keys())
 
-    def get_data_info(self, name) :
-        '''Get the info dict on the dataset of the given name.'''
+    def _get_data_info(self, name) :
+        '''Get the info dict on the dataset of the given name without any extra actions.'''
         try :
             info = self.datapaths[name]
-            if isinstance(info, dict) :
-                return info
-            return {'tree' : info[0], 'files' : info[1:]}
+            if not isinstance(info, dict) :
+                info = {'tree' : info[0], 'files' : info[1:]}
+            return info
         except KeyError :
             raise ValueError('Unknown data type: ' + repr(name))
+
+    def get_data_info(self, name) :
+        '''Get the info dict on the dataset of the given name.'''
+        # Add the SelectedTree created by make_roodataset as a friend, if it exists.
+        info = self._get_data_info(name)
+        friends = info.get('friends', [])
+        selectedname = name + '_SelectedTree'
+        selectedtree = self.selected_file_name(name)
+        if os.path.exists(selectedtree) and not selectedname in friends :
+            if not selectedname in self.datapaths :
+                self.make_getters({selectedname : {'files' : [selectedtree], 'tree' : 'SelectedTree'}})
+            friends.append(selectedname)
+            info['friends'] = friends
+        return info
 
     def get_data(self, name) :
         '''Get the dataset of the given name.'''
         info = self.get_data_info(name)
         t = make_chain(info['tree'], *info['files'])
         aliases = info.get('aliases', {})
-        set_prefix_aliases(t, **aliases)
+        set_prefix_aliases(t, aliases)
         if 'variables' in info :
             t.variables = dict(self.variables)
             t.variables.update(info['variables'])
@@ -75,12 +89,17 @@ class DataLibrary(object) :
     def dataset_file_name(self, dataname) :
         '''Get the name of the file containing the RooDataset corresponding to the given
         dataset name.'''
-        info = self.get_data_info(dataname)
+        info = self._get_data_info(dataname)
         if 'datasetdir' in info :
             dirname = info['datasetdir']
         else :
             dirname = os.path.dirname(info['files'][0])
         return os.path.join(dirname, dataname + '_Dataset.root')
+
+    def selected_file_name(self, dataname) :
+        '''Get the name of the file containing the TTree of range and selection
+        variables created when making the RooDataSet.'''
+        return self.dataset_file_name(dataname)[:-len('_Dataset.root')] + '_SelectedTree.root'
 
     def get_dataset(self, dataname, varnames = None, update = False) :
         '''Get the RooDataSet of the given name. It's created/updated on demand. varnames is the 
@@ -112,6 +131,7 @@ class DataLibrary(object) :
         dataset = make_roodataset(dataname, dataname, tree,
                                   ignorecompilefails = self.ignorecompilefails,
                                   selection = self._selection(tree),
+                                  selectedtreefile = self.selected_file_name(dataname),
                                   **dict((var, variables[var]) for var in varnames))
 
         fname = self.dataset_file_name(dataname)
@@ -257,7 +277,8 @@ class DataLibrary(object) :
 class BinnedFitData(object) :
 
     def __init__(self, name, outputdir, workspace, roodata, variable, binvariable, bins, 
-                 binvariable2 = None, bins2 = None, nbinsx = 100, xmin = None, xmax = None) :
+                 binvariable2 = None, bins2 = None, nbinsx = 100, xmin = None, xmax = None,
+                 get = False, update = False) :
         self.name = name
         if not os.path.exists(outputdir) :
             os.makedirs(outputdir)
@@ -289,7 +310,7 @@ class BinnedFitData(object) :
             zlen2 = len(str(nbins2))
             for ibin, (binmin, binmax) in enumerate(zip(self.bins[:-1], self.bins[1:])) :
                 for ibin2, (binmin2, binmax2) in enumerate(zip(self.bins2[:-1], self.bins2[1:])) :
-                    binname = name + '_bin_{0}_{1}'.format(str(ibin.zfill(zlen)), str(ibin2.zfill(zlen2)))
+                    binname = name + '_bin_{0}_{1}'.format(str(ibin).zfill(zlen), str(ibin2).zfill(zlen2))
                     self.selections[binname] = {binvariable.GetName() : (binmin, binmax),
                                                 binvariable2.GetName() : (binmin2, binmax2)}
                     self.catvals[binname] = name + '_bin' + str(ibin * nbins2 + ibin2).zfill(zlencat)
@@ -298,7 +319,10 @@ class BinnedFitData(object) :
         self.meanvals = {}
         self.datahist = None
 
-        print self.selections
+        #print self.selections
+
+        if get :
+            self.get(update)
 
     def build(self) :
         fout = ROOT.TFile.Open(self.outputfname, 'recreate')
@@ -311,12 +335,15 @@ class BinnedFitData(object) :
         Histpair = cppyy.makeClass('pair<const string,RooDataHist*>')
 
         for binname, selection in self.selections.items() :
+            # Make the dataset for the bin.
             catval = self.catvals[binname]
             datahist = make_roodatahist(binname, self.roodata, self.variable, selection = selection,
                                         nbins = self.nbinsx, xmin = self.xmin, xmax = self.xmax)
             datahist.Write()
             self.datasets[binname] = datahist
             histmap.insert(Histpair(catval, datahist))
+
+            # Calculate the mean values of the bin variables for the bin.
             meanvals = {name : 0. for name in selection}
             n = 0
             for i in xrange(self.roodata.numEntries()) :
@@ -358,3 +385,11 @@ class BinnedFitData(object) :
     def get(self, update = False) :
         if update or not self.retrieve() :
             self.build()
+
+    def make_roosimultaneous(self, pdfs, pref = '') :
+        simul = ROOT.RooSimultaneous(pref + self.name + '_pdf', '', self.binvar)
+        for catname, pdf in pdfs.items() :
+            if simul.addPdf(pdf, catname) :
+                raise ValueError('Something went wrong adding PDF {0} for category {1}'.format(pdf.GetName(),
+                                                                                               catname))
+        return simul
