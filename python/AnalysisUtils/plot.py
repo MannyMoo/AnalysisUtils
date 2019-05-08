@@ -2,6 +2,16 @@
 
 import ROOT, subprocess
 
+# Colours, marker and line styles for histos, so you can assign them in a loop.
+goodcolours = (ROOT.kBlack, ROOT.kBlue, ROOT.kRed, ROOT.kGreen+2, ROOT.kMagenta+1, ROOT.kCyan+3,
+               ROOT.kOrange+2, ROOT.kYellow+2)
+goodcolors = goodcolours
+goodmarkers = (ROOT.kPlus, ROOT.kStar, ROOT.kCircle, ROOT.kMultiply, ROOT.kFullDotLarge,
+               ROOT.kFullSquare, ROOT.kFullTriangleUp, ROOT.kFullTriangleDown, ROOT.kOpenCircle,
+               ROOT.kOpenSquare, ROOT.kOpenTriangleUp, ROOT.kOpenDiamond, ROOT.kOpenCross,
+               ROOT.kOpenStar, ROOT.kFullStar)
+goodlinestyles = tuple(range(1, 11))
+
 def plot_fit(pdf, data, plotVar = None, pullCanvHeight = 0.2, canvArgs = (),
              dataPlotArgs = (), components = (), legpos = (0.7, 0.7, 0.95, 0.95)) :
     '''Plot the fit over the data for the given plotVar with the pull below. If

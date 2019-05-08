@@ -375,7 +375,8 @@ def get_unique_events(tree, listname = None, seedoffset = 0, setlist = False,
 class TreeBranchAdder(object) :
     '''Add a branch to a TTree.'''
 
-    def __init__(self, tree, name, function, type = 'f', length = 1, maxlength = 1, args = (), kwargs = {}) :
+    def __init__(self, tree, name, function, type = 'f', length = 1, maxlength = 1, args = (), kwargs = {},
+                 filllength = True) :
         '''tree: the TTree to add the branch to.
         name: name of the branch.
         function: must return a list of values for the branch when called. It will be passed *args and **kwargs.
@@ -385,13 +386,14 @@ class TreeBranchAdder(object) :
         maxlength: maximum length of the branch.
         args: args to be passed to function.
         kwargs: kwrags to be passed to function.
+        filllength: whether to fill the length branch or not.
         '''
 
         self.tree = tree
         self.name = name
         self.values = array(type, [0] * maxlength)
         self.type = type
-        if isinstance(length, str) :
+        if isinstance(length, str) and filllength:
             self.length = TreeBranchAdder(tree, length, function = lambda : len(self.values), type = 'i')
             self.set_length = lambda : self.length.set_value()
             self.fill_length = lambda : self.length.fill()
@@ -406,6 +408,22 @@ class TreeBranchAdder(object) :
         self.branch = tree.Branch(self.name, self.values,
                                   '{0}[{1}]/{2}'.format(self.name, self.length, self.type.upper()))
 
+    @staticmethod
+    def copy_branch(tree, branchname, treeout, function, args = (), kwargs = {}, filllength = True) :
+        br = tree.GetBranch(branchname)
+        br.GetEntry(0)
+        leaf = tree.GetLeaf(branchname)
+        lenleaf = leaf.GetLeafCount()
+        if lenleaf : 
+            maxlen = lenleaf.GetMaximum()
+            lenleaf = lenleaf.GetName()
+        else :
+            lenleaf = leaf.GetLen()
+            maxlen = lenleaf
+        leaftype = leaf.GetTypeName()[0].lower()
+        return BranchAdder(treeout, branchname, function, type = leaftype, args = args, kwargs = kwargs, 
+                           maxlength = maxlen, length = lenleaf, filllength = filllength)
+
     def set_value(self) :
         '''Set the values of the branch array, and length branch if appropriate.'''
         vals = self.function(*self.args, **self.kwargs)[:self.maxlength]
@@ -417,3 +435,9 @@ class TreeBranchAdder(object) :
         '''Fill the branch, and the length branch if appropriate.'''
         self.branch.Fill()
         self.fill_length()
+
+def search_branches(tree, pattern1, *patterns) :
+    '''Return branch names in the given TTree that match any of the given patterns.'''
+    patterns = (pattern1,) + patterns
+    return filter(lambda name : any(re.search(pat, name) for pat in patterns),
+                  (br.GetName() for br in tree.GetListOfBranches()))
