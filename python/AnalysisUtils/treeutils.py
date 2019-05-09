@@ -421,8 +421,8 @@ class TreeBranchAdder(object) :
             lenleaf = leaf.GetLen()
             maxlen = lenleaf
         leaftype = leaf.GetTypeName()[0].lower()
-        return BranchAdder(treeout, branchname, function, type = leaftype, args = args, kwargs = kwargs, 
-                           maxlength = maxlen, length = lenleaf, filllength = filllength)
+        return TreeBranchAdder(treeout, branchname, function, type = leaftype, args = args, kwargs = kwargs, 
+                               maxlength = maxlen, length = lenleaf, filllength = filllength)
 
     def set_value(self) :
         '''Set the values of the branch array, and length branch if appropriate.'''
