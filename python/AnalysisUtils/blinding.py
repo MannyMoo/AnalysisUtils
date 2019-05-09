@@ -3,6 +3,10 @@
 import ROOT
 from AnalysisUtils.treeutils import TreeBranchAdder, search_branches, make_chain, tree_loop
 
+def generate_blinding_seed(seed = 0, seedmax = long(1e15)) :
+    rndm = ROOT.TRandom3(seed)
+    return long(rndm.Rndm() * seedmax)
+
 class BlindingParameter(object) :
 
     __slots__ = ('__value',)
