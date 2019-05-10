@@ -216,10 +216,10 @@ class TreePVector(TreeFormulaList) :
     
     __slots__ = ('forms',)
 
-    def __init__(self, tree, partname, pname = '_P') :
+    def __init__(self, tree, partname, pform = '{partname}_P{comp}') :
         '''Takes the particle name and the tree. The branches used will be partname + pname + comp
-        for comp in XYZE. For true momenta, you can use pname = '_TRUEP_'.'''
-        TreeFormulaList.__init__(self, tree, *[partname + pname + comp for comp in 'XZYE'])
+        for comp in XYZE. For true momenta, you can use pname = '{partname}_TRUEP_{comp}'.'''
+        TreeFormulaList.__init__(self, tree, *[pform.format(partname = partname, comp = comp) for comp in 'XZYE'])
         
     def vector(self, tree = None) :
         '''Get the momentum 4-vector as a TLorentzVector.'''
