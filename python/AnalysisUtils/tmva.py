@@ -201,7 +201,7 @@ class TMVADataLoader(object) :
     def __del__(self) :
         if hasattr(self, 'tmpfile') :
             self.tmpfile.Close()
-            os.rm(self.tmpfile.GetName())
+            os.remove(self.tmpfile.GetName())
 
 class TMVAClassifier(object) :
     '''Run TMVA classification algos.'''
