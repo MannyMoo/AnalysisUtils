@@ -193,6 +193,11 @@ class TreeFormula(object) :
                 self.form.GetTree().SetNotify(None)
                 del TreeFormula.chainformulae[treeid]
 
+    def used_leaves(self) :
+        '''Get the names of all the branches used by the formula.'''
+
+        return [self.form.GetLeaf(i).GetName() for i in xrange(self.form.GetNcodes())]
+
 class TreeFormulaList(object) :
     '''A list of TreeFormulas.'''
 
@@ -210,6 +215,12 @@ class TreeFormulaList(object) :
         '''Get the formula values as a list.'''
         return [f() for f in self.forms]
 
+    def used_leaves(self) :
+        '''Get the names of all leaves used by all the formulae.'''
+        leaves = set()
+        for form in self.forms :
+            leaves.update(form.used_leaves())
+        return list(leaves)
 
 class TreePVector(TreeFormulaList) :
     '''Momentum 4-vector for a given particle name.'''
@@ -247,13 +258,13 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
     that determine which branches are kept or removed. If both are given, the branches
     to be kept are applied first.'''
 
+    tree.SetBranchStatus('*', True)
     if selection and isinstance(selection, str) :
         selection = get_event_list(tree, selection)
 
     prevlist = tree.GetEventList()
     tree.SetEventList(selection)
 
-    tree.SetBranchStatus('*', True)
     if keepbranches :
         for branch in tree.GetListOfBranches() :
             if not any(re.search(pattern, branch.GetName()) for pattern in keepbranches) :
@@ -268,7 +279,6 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
         treecopy = tree.CopyTree('')
 
     tree.SetEventList(prevlist)
-
     if treecopy.GetListOfFriends() :
         treecopy.GetListOfFriends().Clear()
         friends = [elm.GetTree() for elm in tree.GetListOfFriends()]
@@ -279,6 +289,7 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
             treecopy.AddFriend(copyfriend)
         return treecopy, copyfriends
 
+    tree.SetBranchStatus('*', True)
     return treecopy
 
 def tree_loop(tree, selection = None, getter = (lambda t, i : t.LoadTree(i))) :

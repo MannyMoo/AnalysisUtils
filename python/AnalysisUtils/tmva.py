@@ -1,7 +1,9 @@
 import ROOT, os
 from ROOT import TMVA
-from AnalysisUtils.treeutils import tree_iter, random_string, copy_tree
+from AnalysisUtils.treeutils import tree_iter, random_string, copy_tree, TreeBranchAdder, TreeFormula, tree_loop, \
+    TreeFormulaList
 from AnalysisUtils.selection import AND, NOT
+from AnalysisUtils.addmva import MVACalc
 
 class TMVAOptions(object) :
     '''Wrapper for options passed to TMVA.'''
@@ -127,6 +129,7 @@ class TMVADataLoader(object) :
         if self.trainingcut :
             pwd = ROOT.gROOT.CurrentDirectory()
             self.tmpfile = ROOT.TFile.Open('DataLoader_' + random_string() + '.root', 'recreate')
+            usedleaves = self.used_leaves(dataloader)
             for name in 'Signal', 'Background' :
                 lname = name.lower()
                 namecut = getattr(self, lname + 'cut')
@@ -134,7 +137,7 @@ class TMVADataLoader(object) :
                     cut = AND(*filter(None, [namecut, cut]))
                     tree = getattr(self, lname + 'tree')
                     if tree.GetListOfFriends() :
-                        seltree, copyfriends = copy_tree(tree, cut)
+                        seltree, copyfriends = copy_tree(tree, cut, keepbranches = usedleaves)
                         for fr in copyfriends :
                             fr.Write()
                     else :
@@ -183,6 +186,17 @@ class TMVADataLoader(object) :
         print 'Cut ranges:'
         print cutrangeopts
         return cutrangeopts
+
+    def used_leaves(self, dataloader = None) :
+        '''Get the list of leaves used by the variables and weight expressions (not the cuts).'''
+        if not dataloader :
+            dataloader = self.dataloader
+        datasetinfo = dataloader.GetDataSetInfo()
+        forms = [str(varinfo.GetExpression()) for varinfo in datasetinfo.GetVariableInfos()]
+        forms += [str(varinfo.GetExpression()) for varinfo in datasetinfo.GetSpectatorInfos()]
+        forms += [self.signalweight, self.backgroundweight]
+        forms = filter(None, forms)
+        return TreeFormulaList(self.signaltree, *forms).used_leaves()
 
     def __del__(self) :
         if hasattr(self, 'tmpfile') :
@@ -358,6 +372,10 @@ class TMVAClassifier(object) :
                 factory.BookMethod(*args)        
         return methods
 
+    def weights_file(self, method, suffix = '.weights.xml') :
+        return os.path.join(self.weightsdir, self.dataloader.name, 'weights', 
+                            self.name + '_' + method + suffix)
+
     def train_factory(self, outputfile) :
         '''Train using TMVA::Factory.'''
 
@@ -383,10 +401,8 @@ class TMVAClassifier(object) :
         print '=== wrote root file {0}\n'.format(outputfile.GetName())
         print '=== TMVAClassification is done!\n'
 
-        weightsfiles = dict((m, os.path.join(self.weightsdir, self.dataloader.name, 'weights', 
-                                             self.name + '_' + m + '.weights.xml')) for m in methods)
-        classfiles = dict((m, os.path.join(self.weightsdir, self.dataloader.name, 'weights', 
-                                           self.name + '_' + m + '.class.C')) for m in methods)
+        weightsfiles = dict((m, self.weights_file(m)) for m in methods)
+        classfiles = dict((m, self.weights_file(m, '.class.C')) for m in methods)
         return weightsfiles, classfiles
 
     def cross_validate(self, nfolds, outputfile) :
@@ -452,7 +468,7 @@ class KFoldClassifier(object) :
         self.testingcuts = tuple(testingcuts)
         classifiers = []
         for i, cut in enumerate(self.testingcuts) :
-            opts = {'trainingcut' : cut}
+            opts = {'testingcut' : cut}
 
             datakwargs = dict(self.datakwargs)
             datakwargs['testingcut'] = cut
@@ -474,3 +490,40 @@ class KFoldClassifier(object) :
         for opts in self.classifiers :
             results.append(opts['classifier'].train_and_test())
         return results
+
+    def add_mva(self, inputtree, method, outputfile, outputtree, branchname = None) :
+        '''Make a TTree with the MVA values, selecting the weights file according 
+        to the fold that each entry belongs to.'''
+
+        foldselectors = [TreeFormula('selform_' + str(i), opts['testingcut'], inputtree) \
+                             for i, opts in enumerate(self.classifiers)]
+        def select_fold() :
+            for i, sel in enumerate(foldselectors) :
+                if sel() :
+                    return i
+            return -1
+
+        mvacalcs = [MVACalc(inputtree, opts['classifier'].weights_file(method), method) \
+                        for i, opts in enumerate(self.classifiers)]
+
+        ientry = 0
+        def get_mva() :
+            i = select_fold()
+            if i < 0 :
+                return [0.]
+            return [mvacalcs[i].calc_mva(ientry)]
+
+        if not branchname :
+            branchname = method
+        
+        outputfile = ROOT.TFile.Open(outputfile, 'recreate')
+        outputtree = ROOT.TTree(outputtree, outputtree)
+        mvabranch = TreeBranchAdder(outputtree, branchname, get_mva)
+        foldbranch = TreeBranchAdder(outputtree, branchname + '_fold', lambda : [select_fold()],
+                                     type = 'i')
+        for ientry in tree_loop(inputtree) :
+            mvabranch.set_value()
+            foldbranch.set_value()
+            outputtree.Fill()
+        outputtree.Write()
+        outputfile.Close()
