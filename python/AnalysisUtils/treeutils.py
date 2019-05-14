@@ -247,6 +247,12 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
     that determine which branches are kept or removed. If both are given, the branches
     to be kept are applied first.'''
 
+    if selection and isinstance(selection, str) :
+        selection = get_event_list(tree, selection)
+
+    prevlist = tree.GetEventList()
+    tree.SetEventList(selection)
+
     tree.SetBranchStatus('*', True)
     if keepbranches :
         for branch in tree.GetListOfBranches() :
@@ -257,9 +263,22 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
             if any(re.search(pattern, branch.GetName()) for pattern in removebranches) :
                 branch.SetStatus(False)
     if nentries > 0 :
-        treecopy = tree.CopyTree(selection, '', int(nentries))
+        treecopy = tree.CopyTree('', '', int(nentries))
     else :
-        treecopy = tree.CopyTree(selection)
+        treecopy = tree.CopyTree('')
+
+    tree.SetEventList(prevlist)
+
+    if treecopy.GetListOfFriends() :
+        treecopy.GetListOfFriends().Clear()
+        friends = [elm.GetTree() for elm in tree.GetListOfFriends()]
+        copyfriends = []
+        for friend in friends :
+            copyfriend = copy_tree(friend, selection, nentries, keepbranches, removebranches)
+            copyfriends.append(copyfriend)
+            treecopy.AddFriend(copyfriend)
+        return treecopy, copyfriends
+
     return treecopy
 
 def tree_loop(tree, selection = None, getter = (lambda t, i : t.LoadTree(i))) :

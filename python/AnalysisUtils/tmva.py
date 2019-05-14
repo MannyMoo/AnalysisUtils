@@ -1,6 +1,7 @@
 import ROOT, os
 from ROOT import TMVA
-from AnalysisUtils.treeutils import tree_iter
+from AnalysisUtils.treeutils import tree_iter, random_string, copy_tree
+from AnalysisUtils.selection import AND, NOT
 
 class TMVAOptions(object) :
     '''Wrapper for options passed to TMVA.'''
@@ -44,6 +45,149 @@ class TMVAOptions(object) :
             else :
                 self.args += (arg,)
         self.kwargs.update(kwargs)
+
+class TMVADataLoader(object) :
+    '''Wrapper for TMVA.DataLoader.'''
+
+    def __init__(self, signaltree, backgroundtree, variables, spectators = (),
+                 signalweight = '', backgroundweight = '',
+                 signalcut = '', backgroundcut = '',
+                 signalglobalweight = 1., backgroundglobalweight = 1.,
+                 name = 'dataset', splitoptions = None, trainingcut = '',
+                 testingcut = '') :
+        '''signaltree : the signal TTree.
+        backgroundtree : the background TTree.
+        variables : list of training variables. These can just be the variable expressions as strings, or
+          a list of arguments to be passed to TMVA.DataLoader.AddVariable.
+        spectators : same as variables, for spectator variables which are included in the output but not
+          used for training.
+        signalweight : expression for the signal weight.
+        backgroundweight : expression for the background weight.
+        signalcut : selection for the signal.
+        backgroundcut : selection for the background.
+        signalglobalweight : global weight for signal.
+        backgroundglobalweight : global weight for the background.
+        name : name of the TMVA.DataLoader instance.
+        splitoptions : options for TMVA.DataLoader.PrepareTrainingAndTestTree. If None the default is used.
+        '''
+
+        if None == splitoptions :
+            splitoptions = TMVADataLoader.default_split_options()
+        elif isinstance(splitoptions, str) :
+            splitoptions = TMVAOptions.from_string(splitoptions)
+
+        if trainingcut and not testingcut :
+            testingcut = NOT(trainingcut)
+        elif testingcut and not trainingcut :
+            trainingcut = NOT(testingcut)
+
+        for attr, val in locals().items() :
+            if attr == 'self' :
+                continue
+            setattr(self, attr, val)
+
+        self.dataloader = self._make_dataloader()
+
+    @staticmethod
+    def default_split_options(*args, **kwargs) :
+        '''Get the default DataLoader options, optionally updating them with the given args.'''
+        opts = TMVAOptions.from_string('nTrain_Signal=0:nTrain_Background=0:SplitMode=Random:NormMode=NumEvents:!V')
+        opts.update(*args, **kwargs)
+        return opts
+
+    def _make_dataloader(self) :
+        '''Make the DataLoader for training.'''
+
+        # Load the data.
+        dataloader = TMVA.DataLoader(self.name)
+
+        # Add training variables.
+        for var in self.variables :
+            if not isinstance(var, (tuple, list)) :
+                var = (var,)
+            try :
+                dataloader.AddVariable(*var)
+            except :
+                print 'Failed to call dataloader.AddVariable with args', var
+                raise 
+
+        # Add spectator variables.
+        for var in self.spectators :
+            if not isinstance(var, (tuple, list)) :
+                var = (var,)
+            try :
+                dataloader.AddSpectator(*var)
+            except :
+                print 'Failed to call dataloader.AddSpectator with args', var
+                raise 
+
+        # Register trees.
+        # If we have explicit cuts for training and testing, we need to copy the TTrees first,
+        # applying these cuts.
+        if self.trainingcut :
+            pwd = ROOT.gROOT.CurrentDirectory()
+            self.tmpfile = ROOT.TFile.Open('DataLoader_' + random_string() + '.root', 'recreate')
+            for name in 'Signal', 'Background' :
+                lname = name.lower()
+                namecut = getattr(self, lname + 'cut')
+                for ttype, cut in (TMVA.Types.kTraining, self.trainingcut), (TMVA.Types.kTesting, self.testingcut) :
+                    cut = AND(*filter(None, [namecut, cut]))
+                    tree = getattr(self, lname + 'tree')
+                    if tree.GetListOfFriends() :
+                        seltree, copyfriends = copy_tree(tree, cut)
+                        for fr in copyfriends :
+                            fr.Write()
+                    else :
+                        seltree = copy_tree(tree, cut)
+                    seltree.Write()
+                    dataloader.AddTree(seltree, name, getattr(self, lname + 'globalweight'),
+                                       ROOT.TCut(''), ttype)
+                weight = getattr(self, lname + 'weight')
+                if weight :
+                    dataloader.SetWeightExpression(weight, name)
+
+            dataloader.GetDataSetInfo().SetSplitOptions(str(self.splitoptions))
+            pwd.cd()
+
+        else :
+            dataloader.AddSignalTree(self.signaltree, self.signalglobalweight)
+            dataloader.AddBackgroundTree(self.backgroundtree, self.backgroundglobalweight)
+
+            # Set weight expressions.
+            if self.signalweight :
+                dataloader.SetSignalWeightExpression(self.signalweight)
+            if self.backgroundweight :
+                dataloader.SetBackgroundWeightExpression(self.backgroundweight)
+
+            # Prepare the training.
+            dataloader.PrepareTrainingAndTestTree(ROOT.TCut(self.signalcut), ROOT.TCut(self.backgroundcut),
+                                                  str(self.splitoptions))
+
+        return dataloader
+
+    def get_cut_range_opts(self) :
+        '''Get the options for cut ranges, so they stay within the range of the data.'''
+
+        print 'Calculating variable ranges.'
+        datasetinfo = self.dataloader.GetDataSetInfo()
+        cutrangeopts = TMVAOptions()
+        for ivar, varinfo in enumerate(datasetinfo.GetVariableInfos()) :
+            varmin = min(min(tree_iter(self.signaltree, str(varinfo.GetExpression()), self.signalcut)), 
+                         min(tree_iter(self.backgroundtree, str(varinfo.GetExpression()), self.backgroundcut)))
+            varmax = max(max(tree_iter(self.signaltree, str(varinfo.GetExpression()), self.signalcut)), 
+                         max(tree_iter(self.backgroundtree, str(varinfo.GetExpression()), self.backgroundcut)))
+            print 'Range of', varinfo.GetExpression(), varmin, varmax
+            varbuffer = (varmax - varmin)*0.05
+            cutrangeopts.update(**{'CutRangeMin[{0}]'.format(ivar) : varmin - varbuffer,
+                                   'CutRangeMax[{0}]'.format(ivar) : varmax + varbuffer})
+        print 'Cut ranges:'
+        print cutrangeopts
+        return cutrangeopts
+
+    def __del__(self) :
+        if hasattr(self, 'tmpfile') :
+            self.tmpfile.Close()
+            os.rm(self.tmpfile.GetName())
 
 class TMVAClassifier(object) :
     '''Run TMVA classification algos.'''
@@ -128,48 +272,23 @@ class TMVAClassifier(object) :
          'SVM': TMVA.Types.kSVM,
          'TMlpANN': TMVA.Types.kTMlpANN}
 
-    def __init__(self, signaltree, backgroundtree,
-                 methods, variables, spectators = (),
-                 weightsdir = '.', outputfile = 'TMVA.root',
-                 signalweight = '', backgroundweight = '',
-                 signalcut = '', backgroundcut = '',
-                 signalglobalweight = 1., backgroundglobalweight = 1.,
-                 factoryname = 'TMVAClassification', datasetname = 'dataset',
-                 verbose = False,
-                 factoryoptions = None,
-                 dataoptions = None) :
-        '''signaltree : the signal TTree.
-        backgroundtree : the background TTree.
+    def __init__(self, dataloader, methods, weightsdir = '.', outputfile = 'TMVA.root',
+                 name = 'TMVAClassification',
+                 verbose = False, factoryoptions = None) :
+        '''dataloader : the TMVA.DataLoader instance used for input.
         methods : methods to train. Can be a list of method names, in which case the default options
           are used, or a dict of method : options. Here options can be a string or TMVAOptions instance.
-        variables : list of training variables. These can just be the variable expressions as strings, or
-          a list of arguments to be passed to TMVA.DataLoader.AddVariable.
-        spectators : same as variables, for spectator variables which are included in the output but not
-          used for training.
         weightsdir : directory in which to save the output.
         outputfile : name of the output file.
-        signalweight : expression for the signal weight.
-        backgroundweight : expression for the background weight.
-        signalcut : selection for the signal.
-        backgroundcut : selection for the background.
-        signalglobalweight : global weight for signal.
-        backgroundglobalweight : global weight for the background.
-        factoryname : name of the TMVA.Factory instance.
-        datasetname : name of the TMVA.DataLoader instance.
+        name : name of the TMVA.Factory instance.
         verbose : if the TMVA.Factory is verbose.
         factoryoptions : options for the TMVA.Factory. If None the default is used.
-        dataoptions : options for TMVA.DataLoader.PrepareTrainingAndTestTree. If None the default is used.
         '''
 
-        if not factoryoptions :
+        if None == factoryoptions :
             factoryoptions = TMVAClassifier.default_factory_options()
         elif isinstance(factoryoptions, str) :
             factoryoptions = TMVAOptions.from_string(factoryoptions)
-
-        if not dataoptions :
-            dataoptions = TMVAClassifier.default_data_options()
-        elif isinstance(dataoptions, str) :
-            dataoptions = TMVAOptions.from_string(dataoptions)
 
         for attr, val in locals().items() :
             if attr == 'self' :
@@ -184,60 +303,11 @@ class TMVAClassifier(object) :
         return opts
 
     @staticmethod
-    def default_data_options(*args, **kwargs) :
-        '''Get the default DataLoader options, optionally updating them with the given args.'''
-        opts = TMVAOptions.from_string('nTrain_Signal=0:nTrain_Background=0:SplitMode=Random:NormMode=NumEvents:!V')
-        opts.update(*args, **kwargs)
-        return opts
-
-    @staticmethod
     def default_method_options(method, *args, **kwargs) :
         '''Get the default options for the given method, optionally updating them with the given args.'''
         return TMVAOptions.defaultopts[method].copy(*args, **kwargs)
 
-    def make_dataloader(self) :
-        '''Make the DataLoader for training.'''
-
-        # Load the data.
-        dataloader = TMVA.DataLoader(self.datasetname)
-
-        # Add training variables.
-        for var in self.variables :
-            if not isinstance(var, (tuple, list)) :
-                var = (var,)
-            try :
-                dataloader.AddVariable(*var)
-            except :
-                print 'Failed to call dataloader.AddVariable with args', var
-                raise 
-
-        # Add spectator variables.
-        for var in self.spectators :
-            if not isinstance(var, (tuple, list)) :
-                var = (var,)
-            try :
-                dataloader.AddSpectator(*var)
-            except :
-                print 'Failed to call dataloader.AddSpectator with args', var
-                raise 
-
-        # Register trees.
-        dataloader.AddSignalTree(self.signaltree, self.signalglobalweight)
-        dataloader.AddBackgroundTree(self.backgroundtree, self.backgroundglobalweight)
-
-        # Set weight expressions.
-        if self.signalweight :
-            dataloader.SetSignalWeightExpression(self.signalweight)
-        if self.backgroundweight :
-            dataloader.SetBackgroundWeightExpression(self.backgroundweight)
-
-        # Prepare the training.
-        dataloader.PrepareTrainingAndTestTree(ROOT.TCut(self.signalcut), ROOT.TCut(self.backgroundcut),
-                                              str(self.dataoptions))
-        
-        return dataloader
-
-    def get_method_args(self, dataloader) :
+    def get_method_args(self) :
         '''Get the method arguments.'''
         
         # Check method options.
@@ -261,22 +331,9 @@ class TMVAClassifier(object) :
         # If any of the Cuts algos are requested, calcuate the min and max of each training
         # variable and add this to the options, so the algo doesn't try regions that don't
         # have any data.
-        # Could put this in a separate function.
         if any('Cuts' in method for method in methods) :
-            print 'Calculating variable ranges.'
-            datasetinfo = dataloader.GetDataSetInfo()
-            cutrangeopts = TMVAOptions()
-            for ivar, varinfo in enumerate(datasetinfo.GetVariableInfos()) :
-                varmin = min(min(tree_iter(self.signaltree, str(varinfo.GetExpression()), self.signalcut)), 
-                             min(tree_iter(self.backgroundtree, str(varinfo.GetExpression()), self.backgroundcut)))
-                varmax = max(max(tree_iter(self.signaltree, str(varinfo.GetExpression()), self.signalcut)), 
-                             max(tree_iter(self.backgroundtree, str(varinfo.GetExpression()), self.backgroundcut)))
-                print 'Range of', varinfo.GetExpression(), varmin, varmax
-                varbuffer = (varmax - varmin)*0.05
-                cutrangeopts.update(**{'CutRangeMin[{0}]'.format(ivar) : varmin - varbuffer,
-                                       'CutRangeMax[{0}]'.format(ivar) : varmax + varbuffer})
-            print 'Cut ranges:'
-            print cutrangeopts
+
+            cutrangeopts = self.dataloader.get_cut_range_opts()
             
             for method in methods :
                 if not 'Cuts' in method :
@@ -287,29 +344,29 @@ class TMVAClassifier(object) :
             methods[method] = args[:-1] + (str(args[-1]),)
         return methods
 
-    def book_methods(self, factory, dataloader) :
+    def book_methods(self, factory) :
         '''Book the methods in the given factory.'''
         # Book the methods.
-        methods = self.get_method_args(dataloader)
+        methods = self.get_method_args()
         if isinstance(factory, TMVA.Factory) :
             for method, args in methods.items() :
                 print 'Book method', method, 'with options', args[-1]
-                factory.BookMethod(dataloader, *args)        
+                factory.BookMethod(self.dataloader.dataloader, *args)        
         else :
             for method, args in methods.items() :
                 print 'Book method', method, 'with options', args[-1]
                 factory.BookMethod(*args)        
         return methods
 
-    def train_factory(self, dataloader, outputfile) :
+    def train_factory(self, outputfile) :
         '''Train using TMVA::Factory.'''
 
         # Make the factory.
-        factory = TMVA.Factory(self.factoryname, outputfile, 
+        factory = TMVA.Factory(self.name, outputfile, 
                                str(self.factoryoptions))
         factory.SetVerbose(self.verbose)
 
-        methods = self.book_methods(factory, dataloader)
+        methods = self.book_methods(factory)
         
         # Train MVAs
         factory.TrainAllMethods()
@@ -326,17 +383,17 @@ class TMVAClassifier(object) :
         print '=== wrote root file {0}\n'.format(outputfile.GetName())
         print '=== TMVAClassification is done!\n'
 
-        weightsfiles = dict((m, os.path.join(self.weightsdir, self.datasetname, 'weights', 
-                                             self.factoryname + '_' + m + '.weights.xml')) for m in methods)
-        classfiles = dict((m, os.path.join(self.weightsdir, self.datasetname, 'weights', 
-                                           self.factoryname + '_' + m + '.class.C')) for m in methods)
+        weightsfiles = dict((m, os.path.join(self.weightsdir, self.dataloader.name, 'weights', 
+                                             self.name + '_' + m + '.weights.xml')) for m in methods)
+        classfiles = dict((m, os.path.join(self.weightsdir, self.dataloader.name, 'weights', 
+                                           self.name + '_' + m + '.class.C')) for m in methods)
         return weightsfiles, classfiles
 
-    def cross_validate(self, nfolds, dataloader, outputfile) :
+    def cross_validate(self, nfolds, outputfile) :
         '''Run cross validation with the given number of folds.'''
-        crossval = TMVA.CrossValidation(dataloader)
+        crossval = TMVA.CrossValidation(self.dataloader.dataloader)
         crossval.SetNumFolds(nfolds)
-        methods = self.book_methods(crossval, dataloader)
+        methods = self.book_methods(crossval, self.dataloader.dataloader)
         crossval.Evaluate()
         results = crossval.GetResults()
         return crossval, results
@@ -353,16 +410,15 @@ class TMVAClassifier(object) :
         '''Train and test all methods.'''
 
         pwd = self.cd_weightsdir()
-        dataloader = self.make_dataloader()
 
         # Output file
         outputfile = ROOT.TFile.Open(self.outputfile, 'recreate')
 
-        returnvals = self.train_factory(dataloader, outputfile)
+        returnvals = self.train_factory(outputfile)
 
         # TMVA disables unused branches when copying the trees then doesn't change them back. 
-        self.backgroundtree.SetBranchStatus('*', 1)
-        self.signaltree.SetBranchStatus('*', 1)
+        self.dataloader.backgroundtree.SetBranchStatus('*', 1)
+        self.dataloader.signaltree.SetBranchStatus('*', 1)
 
         os.chdir(pwd)
 
@@ -373,3 +429,48 @@ class TMVAClassifier(object) :
 
         return TMVA.TMVAGui(self.outputfile)
     
+class KFoldClassifier(object) :
+    '''Runs several TMVAClassifiers with k-folding.'''
+
+    def __init__(self, testingcuts, datakwargs, classifierkwargs) :
+        '''testingcuts : the list of cuts to be used for each testing dataset in the folds. The
+          training cut for each will be !(testing cut).
+        datakwargs : the dict of arguments used to initialise the TMVADataLoaders.
+        classifierkwargs : the dict of arguments used to initialise the TMVAClassifiers.
+        '''
+        self.datakwargs = dict(datakwargs)
+        if 'trainingcut' in self.datakwargs :
+            del self.datakwargs['trainingcut']
+        splitoptions = self.datakwargs.get('splitoptions', TMVADataLoader.default_split_options())
+        if isinstance(splitoptions, str) :
+            splitoptions = TMVAOptions.from_string(splitoptions)
+            self.datakwargs['splitoptions'] = splitoptions
+        # Use all available data for each selection.
+        splitoptions.update(nTrain_Signal=0,
+                            nTrain_Background=0)
+        self.classifierkwargs = dict(classifierkwargs)
+        self.testingcuts = tuple(testingcuts)
+        classifiers = []
+        for i, cut in enumerate(self.testingcuts) :
+            opts = {'trainingcut' : cut}
+
+            datakwargs = dict(self.datakwargs)
+            datakwargs['testingcut'] = cut
+            data = TMVADataLoader(**datakwargs)
+
+            classifierkwargs = dict(self.classifierkwargs)
+            weightsdir = classifierkwargs.get('weightsdir', '')
+            weightsdir = '_'.join(filter(None, [weightsdir, 'fold', str(i)]))
+            classifierkwargs['weightsdir'] = weightsdir
+            classifierkwargs['dataloader'] = data
+            opts['classifier'] = TMVAClassifier(**classifierkwargs)
+
+            classifiers.append(opts)
+        self.classifiers = tuple(classifiers)
+
+    def train_and_test(self) :
+        '''Train and test the classifiers on all folds.'''
+        results = []
+        for opts in self.classifiers :
+            results.append(opts['classifier'].train_and_test())
+        return results
