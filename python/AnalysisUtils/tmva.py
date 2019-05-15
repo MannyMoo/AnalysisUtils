@@ -210,7 +210,7 @@ class TMVAClassifier(object) :
         {'BDT': TMVAOptions.from_string('!H:!V:NTrees=850:MinNodeSize=2.5%:MaxDepth=3:BoostType=AdaBoost:AdaBoostBeta=0.5:SeparationType=GiniIndex:nCuts=20'),
          'BDTB': TMVAOptions.from_string('!H:!V:NTrees=400:BoostType=Bagging:SeparationType=GiniIndex:nCuts=20'),
          'BDTD': TMVAOptions.from_string('!H:!V:NTrees=400:MinNodeSize=5%:MaxDepth=3:BoostType=AdaBoost:SeparationType=GiniIndex:nCuts=20:VarTransform=Decorrelate'),
-         'BDTG': TMVAOptions.from_string('!H:!V:NTrees=1000:MinNodeSize=1.5%:BoostType=Grad:Shrinkage=0.10:UseBaggedGrad:GradBaggingFraction=0.5:nCuts=20:MaxDepth=2'),
+         'BDTG': TMVAOptions.from_string('!H:!V:NTrees=1000:MinNodeSize=1.5%:BoostType=Grad:Shrinkage=0.10:UseBaggedBoost:GradBaggingFraction=0.5:nCuts=20:MaxDepth=2'),
          'BoostedFisher': TMVAOptions.from_string('H:!V:Boost_Num=20:Boost_Transform=log:Boost_Type=AdaBoost:Boost_AdaBoostBeta=0.2'),
          'CFMlpANN': TMVAOptions.from_string('!H:!V:NCycles=2000:HiddenLayers=N+1,N'),
          'Cuts': TMVAOptions.from_string('!H:!V:FitMethod=MC:EffSel:SampleSize=200000:VarProp=FMax'),
