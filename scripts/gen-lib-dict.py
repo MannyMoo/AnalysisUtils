@@ -79,6 +79,7 @@ def gen_dict(libname, headersdirs, rootdir, xmlfile, headerfile) :
         xmlfile.write('</lcgdict>\n')
     
     defname = os.path.split(headerfile)[1].replace('.', '_').upper()
+    addedheaders = set()
     with open(headerfile, 'w') as headerfile :
         headerfile.write('''#ifndef {0}
 #define {0}
@@ -87,8 +88,14 @@ def gen_dict(libname, headersdirs, rootdir, xmlfile, headerfile) :
 #include <string>
 #include <vector>
 '''.format(defname))
-        for headername in set(funcs.values() + classes.values()) :
-            headerfile.write('#include <{0}>\n'.format(os.path.relpath(headername, rootdir)))
+        for functype, names in ('class', classes), ('function', funcs) :
+            for name, headername in names.items() :
+                headername = os.path.relpath(headername, rootdir)
+                print 'Add', functype, name, 'from', headername
+                if headername in addedheaders :
+                    continue
+                addedheaders.add(headername)
+                headerfile.write('#include <{0}>\n'.format(headername))
         headerfile.write('#endif\n')
         
 if __name__ == '__main__' :
