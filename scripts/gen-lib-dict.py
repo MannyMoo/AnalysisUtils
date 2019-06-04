@@ -4,12 +4,15 @@
 
 import subprocess, os
 
-def gen_dict(libname, headersdir, xmlfile, headerfile) :
+def gen_dict(libname, headersdirs, rootdir, xmlfile, headerfile) :
     '''Generate the xml and header file from a library.
     libname = path to the library. It should be built with debugging info.
     headersdir = directory to find shared headers.
     xmlfile = the name of the output xml file.
     headerfile = the name of the output header file.'''
+
+    if isinstance(headersdirs, str) :
+        headersdirs = (headersdirs,)
 
     args = ['nm', '-D', '--defined-only', '--demangle', '--line-numbers', libname]
     proc = subprocess.Popen(args, stdout = subprocess.PIPE, stderr = subprocess.PIPE)
@@ -52,9 +55,16 @@ def gen_dict(libname, headersdir, xmlfile, headerfile) :
     for name, fname in symbols.items() :
         fname = fname.split(':')[0]
         fname = os.path.split(fname)[1]
-        hname = os.path.join(headersdir, '.'.join(fname.split('.')[:-1]) + '.h')
-        if not os.path.exists(hname) :
+        hname = ''
+        __hname = '.'.join(fname.split('.')[:-1]) + '.h'
+        for headersdir in headersdirs :
+            _hname = os.path.join(headersdir, __hname)
+            if os.path.exists(_hname) :
+                hname = _hname
+                break
+        if not hname :
             continue
+        print fname, hname, os.path.relpath(hname, rootdir)
         splitname = name.split('::')
         if '::' in name and (splitname[-2] == splitname[-1] or splitname[-1].startswith('~')) :
             classes['::'.join(splitname[:-1])] = hname
@@ -77,8 +87,8 @@ def gen_dict(libname, headersdir, xmlfile, headerfile) :
 #include <string>
 #include <vector>
 '''.format(defname))
-        for headername in funcs.values() + classes.values() :
-            headerfile.write('#include <{0}>\n'.format(headername))
+        for headername in set(funcs.values() + classes.values()) :
+            headerfile.write('#include <{0}>\n'.format(os.path.relpath(headername, rootdir)))
         headerfile.write('#endif\n')
         
 if __name__ == '__main__' :
@@ -86,8 +96,9 @@ if __name__ == '__main__' :
 
     parser = ArgumentParser()
     parser.add_argument('lib', help = 'Library to examine (should be built with debug info).')
-    parser.add_argument('headersdir', help = 'Directory containing header files.')
     parser.add_argument('xmlfile', help = 'Output xml file name')
     parser.add_argument('headerfile', help = 'Output header file name')
+    parser.add_argument('rootdir', help = 'Root directory to take header paths wrt.')
+    parser.add_argument('headersdirs', nargs = '+', help = 'Directory containing header files.')
     args = parser.parse_args()
-    gen_dict(args.lib, args.headersdir, args.xmlfile, args.headerfile)
+    gen_dict(args.lib, args.headersdirs, args.rootdir, args.xmlfile, args.headerfile)
