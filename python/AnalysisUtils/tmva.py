@@ -88,7 +88,7 @@ class TMVADataLoader(object) :
                 continue
             setattr(self, attr, val)
 
-        self.dataloader = self._make_dataloader()
+        self._make_dataloader()
 
     @staticmethod
     def default_split_options(*args, **kwargs) :
@@ -101,14 +101,14 @@ class TMVADataLoader(object) :
         '''Make the DataLoader for training.'''
 
         # Load the data.
-        dataloader = TMVA.DataLoader(self.name)
+        self.dataloader = TMVA.DataLoader(self.name)
 
         # Add training variables.
         for var in self.variables :
             if not isinstance(var, (tuple, list)) :
                 var = (var,)
             try :
-                dataloader.AddVariable(*var)
+                self.dataloader.AddVariable(*var)
             except :
                 print 'Failed to call dataloader.AddVariable with args', var
                 raise 
@@ -118,7 +118,7 @@ class TMVADataLoader(object) :
             if not isinstance(var, (tuple, list)) :
                 var = (var,)
             try :
-                dataloader.AddSpectator(*var)
+                self.dataloader.AddSpectator(*var)
             except :
                 print 'Failed to call dataloader.AddSpectator with args', var
                 raise 
@@ -129,44 +129,62 @@ class TMVADataLoader(object) :
         if self.trainingcut :
             pwd = ROOT.gROOT.CurrentDirectory()
             self.tmpfile = ROOT.TFile.Open('DataLoader_' + random_string() + '.root', 'recreate')
-            usedleaves = self.used_leaves(dataloader)
+            self.tmpfile.cd()
+            usedleaves = self.used_leaves()
+            addtreeargs = []
             for name in 'Signal', 'Background' :
                 lname = name.lower()
                 namecut = getattr(self, lname + 'cut')
                 for ttype, cut in (TMVA.Types.kTraining, self.trainingcut), (TMVA.Types.kTesting, self.testingcut) :
+                    classname = name + '_' + str(ttype) + '_'
                     cut = AND(*filter(None, [namecut, cut]))
                     tree = getattr(self, lname + 'tree')
-                    if tree.GetListOfFriends() :
-                        seltree, copyfriends = copy_tree(tree, cut, keepbranches = usedleaves)
-                        for fr in copyfriends :
-                            fr.Write()
-                    else :
-                        seltree = copy_tree(tree, cut)
-                    seltree.Write()
-                    dataloader.AddTree(seltree, name, getattr(self, lname + 'globalweight'),
-                                       ROOT.TCut(''), ttype)
+                    seltree, copyfriends = copy_tree(tree,
+                                                     selection = cut,
+                                                     keepbranches = usedleaves,
+                                                     rename = (lambda name : classname + name),
+                                                     write = True,
+                                                     returnfriends = True
+                                                     )
+                    addtreeargs.append((seltree.GetName(), name, getattr(self, lname + 'globalweight'),
+                                        ROOT.TCut(''), ttype))
+                    print addtreeargs[-1]
                 weight = getattr(self, lname + 'weight')
                 if weight :
-                    dataloader.SetWeightExpression(weight, name)
+                    self.dataloader.SetWeightExpression(weight, name)
 
-            dataloader.GetDataSetInfo().SetSplitOptions(str(self.splitoptions))
-            pwd.cd()
+            print 'get name'
+            fname = self.tmpfile.GetName()
+            print 'close file'
+            self.tmpfile.ls()
+            self.tmpfile.Close()
+            print 'open file'
+            self.tmpfile = ROOT.TFile.Open(fname)
+            print 'add trees'
+            import sys
+            sys.stdout.flush()
+            for args in addtreeargs :
+                self.dataloader.AddTree(self.tmpfile.Get(args[0]), *args[1:])
+            print 'set opts'
+            self.dataloader.GetDataSetInfo().SetSplitOptions(str(self.splitoptions))
+            print 'cd'
+            if pwd :
+                pwd.cd()
+            print 'done'
 
         else :
-            dataloader.AddSignalTree(self.signaltree, self.signalglobalweight)
-            dataloader.AddBackgroundTree(self.backgroundtree, self.backgroundglobalweight)
+            self.dataloader.AddSignalTree(self.signaltree, self.signalglobalweight)
+            self.dataloader.AddBackgroundTree(self.backgroundtree, self.backgroundglobalweight)
 
             # Set weight expressions.
             if self.signalweight :
-                dataloader.SetSignalWeightExpression(self.signalweight)
+                self.dataloader.SetSignalWeightExpression(self.signalweight)
             if self.backgroundweight :
-                dataloader.SetBackgroundWeightExpression(self.backgroundweight)
+                self.dataloader.SetBackgroundWeightExpression(self.backgroundweight)
 
             # Prepare the training.
-            dataloader.PrepareTrainingAndTestTree(ROOT.TCut(self.signalcut), ROOT.TCut(self.backgroundcut),
+            self.dataloader.PrepareTrainingAndTestTree(ROOT.TCut(self.signalcut), ROOT.TCut(self.backgroundcut),
                                                   str(self.splitoptions))
-
-        return dataloader
 
     def get_cut_range_opts(self) :
         '''Get the options for cut ranges, so they stay within the range of the data.'''
@@ -187,11 +205,9 @@ class TMVADataLoader(object) :
         print cutrangeopts
         return cutrangeopts
 
-    def used_leaves(self, dataloader = None) :
+    def used_leaves(self) :
         '''Get the list of leaves used by the variables and weight expressions (not the cuts).'''
-        if not dataloader :
-            dataloader = self.dataloader
-        datasetinfo = dataloader.GetDataSetInfo()
+        datasetinfo = self.dataloader.GetDataSetInfo()
         forms = [str(varinfo.GetExpression()) for varinfo in datasetinfo.GetVariableInfos()]
         forms += [str(varinfo.GetExpression()) for varinfo in datasetinfo.GetSpectatorInfos()]
         forms += [self.signalweight, self.backgroundweight]

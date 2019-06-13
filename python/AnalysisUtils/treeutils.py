@@ -252,18 +252,25 @@ def rename_branches(tree, *replacements) :
                                    thing.GetTitle().replace(pattern, replacement))
 
 def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
-              removebranches = ()) :
+              removebranches = (), rename = None, write = False, returnfriends = False) :
     '''Copy the given TTree, optionally applying the given selection, or keeping nentries 
     entries. 'keepbranches' and 'removebranches' can be iterables of string regexes 
     that determine which branches are kept or removed. If both are given, the branches
-    to be kept are applied first.'''
+    to be kept are applied first. 'rename' can be a function that returns the name to
+    give the copied tree when passed the old tree's name. If write = True then the 
+    copied tree is written to the current directory. If the TTree has friends, these
+    will also be copied and the copies added as friends to the copy of the original
+    TTree. If you want the copied friends to be returned as well, use 
+    returnfrieds = True. Then the copied TTree and a list of its copied friends
+    will be returned (the list will be empty if the TTree has no friends).'''
 
     tree.SetBranchStatus('*', True)
     if selection and isinstance(selection, str) :
         selection = get_event_list(tree, selection)
-
-    prevlist = tree.GetEventList()
-    tree.SetEventList(selection)
+        selection.SetDirectory(None)
+    if selection :
+        prevlist = tree.GetEventList()
+        tree.SetEventList(selection)
 
     if keepbranches :
         for branch in tree.GetListOfBranches() :
@@ -273,23 +280,52 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
         for branch in tree.GetListOfBranches() :
             if any(re.search(pattern, branch.GetName()) for pattern in removebranches) :
                 branch.SetStatus(False)
+    if not any(not branch.TestBit(ROOT.kDoNotProcess) for branch in tree.GetListOfBranches()) :
+        tree.SetBranchStatus('*', True)
+        if returnfriends :
+            return None, []
+        return None
+
     if nentries > 0 :
         treecopy = tree.CopyTree('', '', int(nentries))
     else :
         treecopy = tree.CopyTree('')
 
-    tree.SetEventList(prevlist)
-    if treecopy.GetListOfFriends() :
-        treecopy.GetListOfFriends().Clear()
-        friends = [elm.GetTree() for elm in tree.GetListOfFriends()]
-        copyfriends = []
-        for friend in friends :
-            copyfriend = copy_tree(friend, selection, nentries, keepbranches, removebranches)
-            copyfriends.append(copyfriend)
-            treecopy.AddFriend(copyfriend)
-        return treecopy, copyfriends
+    if rename :
+        treecopy.SetName(rename(tree.GetName()))
+
+    if selection :
+        tree.SetEventList(prevlist)
+
+    if write :
+        treecopy.Write()
 
     tree.SetBranchStatus('*', True)
+
+    copyfriends = []
+    if treecopy.GetListOfFriends() :
+        for elm in treecopy.GetListOfFriends() :
+            treecopy.RemoveFriend(elm.GetTree())
+        friends = [elm.GetTree() for elm in tree.GetListOfFriends()]
+        for friend in friends :
+            copyfriend, copyfriendfriends = \
+                copy_tree(friend,
+                          selection = selection,
+                          nentries = nentries,
+                          keepbranches = keepbranches,
+                          removebranches = removebranches,
+                          write = write,
+                          rename = rename,
+                          returnfriends = True)
+            if not copyfriend :
+                continue
+            copyfriends.append(copyfriend)
+            copyfriends += copyfriendfriends
+            treecopy.AddFriend(copyfriend)
+
+    if returnfriends :
+        return treecopy, copyfriends
+
     return treecopy
 
 def tree_loop(tree, selection = None, getter = (lambda t, i : t.LoadTree(i))) :
