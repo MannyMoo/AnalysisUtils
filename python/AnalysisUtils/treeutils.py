@@ -251,6 +251,10 @@ def rename_branches(tree, *replacements) :
                 thing.SetNameTitle(thing.GetName().replace(pattern, replacement),
                                    thing.GetTitle().replace(pattern, replacement))
 
+def has_active_branches(tree) :
+    '''Check if the TTree has any active branches.'''
+    return any(not branch.TestBit(ROOT.kDoNotProcess) for branch in tree.GetListOfBranches())
+
 def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
               removebranches = (), rename = None, write = False, returnfriends = False) :
     '''Copy the given TTree, optionally applying the given selection, or keeping nentries 
@@ -280,11 +284,6 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
         for branch in tree.GetListOfBranches() :
             if any(re.search(pattern, branch.GetName()) for pattern in removebranches) :
                 branch.SetStatus(False)
-    if not any(not branch.TestBit(ROOT.kDoNotProcess) for branch in tree.GetListOfBranches()) :
-        tree.SetBranchStatus('*', True)
-        if returnfriends :
-            return None, []
-        return None
 
     if nentries > 0 :
         treecopy = tree.CopyTree('', '', int(nentries))
@@ -297,15 +296,15 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
     if selection :
         tree.SetEventList(prevlist)
 
-    if write :
-        treecopy.Write()
-
     tree.SetBranchStatus('*', True)
 
     copyfriends = []
-    if treecopy.GetListOfFriends() :
-        for elm in treecopy.GetListOfFriends() :
-            treecopy.RemoveFriend(elm.GetTree())
+    if tree.GetListOfFriends() :
+        # If I do this in python, or even access treecopy.GetListOfFriends(),
+        # it causes a crash when the file containing copytree is closed.
+        # It seems that python takes ownership of the friends list?
+        # treecopy.GetListOfFreinds().Clear()
+        ROOT.gROOT.ProcessLine(treecopy.GetName() + '->GetListOfFriends()->Clear()')
         friends = [elm.GetTree() for elm in tree.GetListOfFriends()]
         for friend in friends :
             copyfriend, copyfriendfriends = \
@@ -322,6 +321,9 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
             copyfriends.append(copyfriend)
             copyfriends += copyfriendfriends
             treecopy.AddFriend(copyfriend)
+
+    if write :
+        treecopy.Write()
 
     if returnfriends :
         return treecopy, copyfriends

@@ -128,7 +128,7 @@ class TMVADataLoader(object) :
         # applying these cuts.
         if self.trainingcut :
             pwd = ROOT.gROOT.CurrentDirectory()
-            self.tmpfile = ROOT.TFile.Open('DataLoader_' + random_string() + '.root', 'recreate')
+            self.tmpfile = ROOT.TFile.Open(os.path.abspath('DataLoader_' + random_string() + '.root'), 'recreate')
             self.tmpfile.cd()
             usedleaves = self.used_leaves()
             addtreeargs = []
@@ -148,29 +148,18 @@ class TMVADataLoader(object) :
                                                      )
                     addtreeargs.append((seltree.GetName(), name, getattr(self, lname + 'globalweight'),
                                         ROOT.TCut(''), ttype))
-                    print addtreeargs[-1]
                 weight = getattr(self, lname + 'weight')
                 if weight :
                     self.dataloader.SetWeightExpression(weight, name)
 
-            print 'get name'
             fname = self.tmpfile.GetName()
-            print 'close file'
-            self.tmpfile.ls()
             self.tmpfile.Close()
-            print 'open file'
             self.tmpfile = ROOT.TFile.Open(fname)
-            print 'add trees'
-            import sys
-            sys.stdout.flush()
             for args in addtreeargs :
                 self.dataloader.AddTree(self.tmpfile.Get(args[0]), *args[1:])
-            print 'set opts'
             self.dataloader.GetDataSetInfo().SetSplitOptions(str(self.splitoptions))
-            print 'cd'
             if pwd :
                 pwd.cd()
-            print 'done'
 
         else :
             self.dataloader.AddSignalTree(self.signaltree, self.signalglobalweight)
@@ -526,7 +515,7 @@ class KFoldClassifier(object) :
         def get_mva() :
             i = select_fold()
             if i < 0 :
-                return [0.]
+                return [-999.]
             return [mvacalcs[i].calc_mva(ientry)]
 
         if not branchname :
