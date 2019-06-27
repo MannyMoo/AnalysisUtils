@@ -300,11 +300,11 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
 
     copyfriends = []
     if tree.GetListOfFriends() :
-        # If I do this in python, or even access treecopy.GetListOfFriends(),
-        # it causes a crash when the file containing copytree is closed.
-        # It seems that python takes ownership of the friends list?
-        # treecopy.GetListOfFreinds().Clear()
-        ROOT.gROOT.ProcessLine(treecopy.GetName() + '->GetListOfFriends()->Clear()')
+        # Accessing the list of friends in python adds it to the list of ROOT objects to cleanup,
+        # but it's owned by the TTree, causing a double delete. So remove it from the cleanup
+        # list.
+        treecopy.GetListOfFriends().Clear()
+        treecopy.GetListOfFriends().SetBit(ROOT.kMustCleanup, False)
         friends = [elm.GetTree() for elm in tree.GetListOfFriends()]
         for friend in friends :
             copyfriend, copyfriendfriends = \
