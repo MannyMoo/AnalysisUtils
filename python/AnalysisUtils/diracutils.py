@@ -87,8 +87,70 @@ clear=True)
 
 def get_lfns_from_path(path, outputfile = None) :
     '''Get the LFNs from the given BK path.'''
+    # Move the event type to the end of the path
+    if path.startswith('evt+std:/') :
+        splitpath = filter(None, path.split('/'))
+        path = '/' + '/'.join(splitpath[1:3] + splitpath[4:-1] + splitpath[3:4] + splitpath[-1:])
+    # Remove any sim+std:/ prefix.
+    elif ':/' in path :
+        path = '/' + '/'.join(filter(None, path.split('/')[1:]))
     return get_lfns('-B', path, outputfile = outputfile)
-                
+
+def gen_xml_catalog(fname, lfns, rootvar = None) :
+    '''Generate the xml catalog for the given LFNs and the .py file to include in your options.
+    'rootvar' can be the name of an environment variable which will be used as the root for the
+     path of the .xml in the .py. 'fname' can also include unexpanded environment variables,
+     in which case 'rootvar' is ignored.'''
+
+    xmlname = os.path.abspath(os.path.expandvars(fname))
+    pyname = xmlname[:-4] + '.py'
+    
+    if not fname.startswith('$') :
+        if rootvar :
+            fname = os.path.join('$' + rootvar, os.path.relpath(xmlname, os.environ[rootvar]))
+        else :
+            fname = xmlname
+
+    args = ['dirac-bookkeeping-genXMLCatalog', '-l', ','.join(lfns), '--Catalog=' + xmlname]
+    if lfns[0].lower().endswith('.rdst') :
+        args += '--Depth=2'
+
+    returnvals = dirac_call(*args)
+    if not os.path.exists(xmlname) :
+        raise OSError('''Call to {0!r} failed!
+Exit code: {1}
+stdout:
+'''.format(' '.join(args), returnvals['exitcode']) + returnvals['stdout'] + '''
+stderr:
+''' + returnval['stderr'])
+
+    with open(pyname, 'w') as f :
+        f.write('''
+from Gaudi.Configuration import FileCatalog
+
+FileCatalog().Catalogs += [ 'xmlcatalog_file:{0}' ]
+'''.format(fname))
+    return returnvals
+
+def gen_xml_catalog_from_file(lfnsfile, xmlfile = None, rootvar = None, nfiles = 0) :
+    '''Extract the LFNs from lfnsfile and pass them to gen_xml_catalog.'''
+
+    with open(os.path.expandvars(lfnsfile)) as f :
+        contents = f.read()
+    # This assumes that the first list in the options file is the list of LFNs.
+    lfns = eval(contents[contents.index('['):contents.index(']')+1])
+    lfns = [lfn.replace('LFN:', '') for lfn in lfns]
+    if nfiles :
+        lfns = lfns[:nfiles]
+
+    if not lfns :
+        raise OSError('Failed to extract any LFNs from file ' + lfnsfile)
+
+    if not xmlfile :
+        # Assumes lfnsfile ends with .py
+        xmlfile = lfnsfile[:-3] + '_catalog.xml'
+    return gen_xml_catalog(fname = xmlfile, lfns = lfns, rootvar = rootvar)
+
 def get_step_info(stepid) :
     '''Get info on the given production step.'''
     
