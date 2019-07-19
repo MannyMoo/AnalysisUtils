@@ -3,11 +3,14 @@ from PhysConf.Selections import RebuildSelection
 import StandardParticles
 from Configurables import FilterDesktop, CombineParticles, CheckPV
 
-mcbasicinputs = {'K+' : 'StdAllNoPIDsKaons',
-                 'pi+' : 'StdAllNoPIDsPions',
-                 'mu-' : 'StdAllNoPIDsMuons',
-                 'p+' : 'StdAllNoPIDsProtons',
-                 'e-' : 'StdAllNoPIDsElectrons'}
+mcbasicinputs = {'K+' : ['StdAllNoPIDsKaons'],
+                 'pi+' : ['StdAllNoPIDsPions'],
+                 'mu-' : ['StdAllNoPIDsMuons'],
+                 'p+' : ['StdAllNoPIDsProtons'],
+                 'e-' : ['StdAllNoPIDsElectrons'],
+                 # RebuildSelection currently doesn't work with StdLooseResolvedPi0.
+                 'pi0' : ['StdLooseMergedPi0',], #'StdLooseResolvedPi0']
+                 }
 
 selections = {}
 
@@ -32,14 +35,14 @@ def build_mc_unbiased_selection(decayDesc, arrow = '==>', refitpvs = True) :
         if not basicname in mcbasicinputs :
             basicname = decayDesc.conjugate().particle.name
         if basicname in mcbasicinputs :
-            inputsel = RebuildSelection(getattr(StandardParticles, mcbasicinputs[basicname]))
+            inputsels = [RebuildSelection(getattr(StandardParticles, basicinput)) for basicinput in mcbasicinputs[basicname]]
         else :
             raise ValueError("Can't find MC basic input for particle " + repr(decayDesc.particle.name))
         alg.Code = 'mcMatch({0!r})'.format(decayDescCC.to_string(arrow))
         alg.Preambulo = preamble
         sel = Selection(algname,
                         Algorithm = alg,
-                        RequiredSelections = [inputsel])
+                        RequiredSelections = inputsels)
         selections[algname] = sel
         return sel
     inputs = set()

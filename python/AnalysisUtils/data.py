@@ -198,6 +198,11 @@ class DataLibrary(object) :
             mergeddata[mergedname] = merged
         self.make_getters(mergeddata)
 
+    def add_single_file_datasets(self, name) :
+        '''Add datasets split by files for the given dataset name.'''
+        info = get_data_info(name)
+        
+
     def check_dataset(self, name) :
         '''Check that all files exist, are unique, contain the required TTree, and all the TTrees have 
         the same branches.'''

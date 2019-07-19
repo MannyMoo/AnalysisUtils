@@ -82,7 +82,11 @@ class ParticleDescriptor(object) :
         return self.to_string()
 
     def conjugate(self) :
-        return ParticleDescriptor(-1 * self.particle.pdgid, cc = self.cc,
+        if self.particle.charge != 0 :
+            conjid = -1 * self.particle.pdgid
+        else :
+            conjid = self.particle.pdgid
+        return ParticleDescriptor(conjid, cc = self.cc,
                                    daughters = tuple(daughter.conjugate() for daughter \
                                                          in self.daughters))
 
@@ -158,6 +162,9 @@ class ParticleDescriptor(object) :
                 ('(', '_'), (')', '_'):
             alias = alias.replace(match, sub)
         return alias
+
+    def get_aliases(self) :
+        return [part.get_alias() for part in self]
 
     def set_aliases(self, aliases) :
         if isinstance(aliases, (tuple, list)) :
