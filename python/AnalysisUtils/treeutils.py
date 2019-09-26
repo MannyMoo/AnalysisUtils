@@ -394,7 +394,7 @@ def get_event_list(tree, selection, setlist = False, listname = '') :
     '''Get the TEventList of entries that pass the selection. If setlist = True, the TTree's
     event list is set to this.'''
     if not listname :
-        listname = tree.GetName() + '_sellist_' + random_string()
+        listname = (tree.GetName() + '_sellist_' + random_string()).replace('/', '_')
     evtlist = ROOT.TEventList(listname)
     # TTree::Draw resets the Notify list for TChains, so set it back after.
     notify = tree.GetNotify() if hasattr(tree, 'GetNotify') else None
