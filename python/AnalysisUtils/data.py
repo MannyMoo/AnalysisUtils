@@ -164,10 +164,14 @@ class DataLibrary(object) :
 
         print 'Making RooDataSet for', dataname
         variables = self._variables(tree)
+        selectedtreefile = self.selected_file_name(dataname)
+        selectedtreedir = os.path.dirname(selectedtreefile)
+        if not os.path.exists(selectedtreedir) :
+            os.makedirs(selectedtreedir)
         dataset = make_roodataset(dataname, dataname, tree,
                                   ignorecompilefails = self.ignorecompilefails,
                                   selection = self._selection(tree),
-                                  selectedtreefile = self.selected_file_name(dataname),
+                                  selectedtreefile = selectedtreefile,
                                   selectedtreename = 'SelectedTree',
                                   **dict((var, variables[var]) for var in varnames))
 
