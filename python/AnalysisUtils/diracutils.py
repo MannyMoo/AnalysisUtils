@@ -259,6 +259,8 @@ def get_data_settings(fname, debug = False, forapp = 'DaVinci', fout = None) :
     lfn = extract_lfns(fname, 1)[0]
     output('LFN:', lfn)
     inputtype = lfn.split('.')[-1].upper()
+    if inputtype == 'XDIGI' :
+        inputtype = 'DIGI'
     output('InputType:', inputtype)
 
     bkpath = lfn_bk_path(lfn)
