@@ -136,9 +136,9 @@ FileCatalog().Catalogs += [ 'xmlcatalog_file:{0}' ]
 '''.format(fname))
     return returnvals
 
-def gen_xml_catalog_from_file(lfnsfile, xmlfile = None, rootvar = None, nfiles = 0, ignore = False, extraargs = []) :
-    '''Extract the LFNs from lfnsfile and pass them to gen_xml_catalog.'''
-
+def extract_lfns(lfnsfile, nfiles = 0, raiseexecpt = True) :
+    '''Extract LFNs from a data file.'''
+    
     with open(os.path.expandvars(lfnsfile)) as f :
         contents = f.read()
     # This assumes that the first list in the options file is the list of LFNs.
@@ -147,9 +147,15 @@ def gen_xml_catalog_from_file(lfnsfile, xmlfile = None, rootvar = None, nfiles =
     if nfiles :
         lfns = lfns[:nfiles]
 
-    if not lfns :
+    if not lfns and raiseexcept :
         raise OSError('Failed to extract any LFNs from file ' + lfnsfile)
 
+    return lfns
+
+def gen_xml_catalog_from_file(lfnsfile, xmlfile = None, rootvar = None, nfiles = 0, ignore = False, extraargs = []) :
+    '''Extract the LFNs from lfnsfile and pass them to gen_xml_catalog.'''
+
+    lfns = extract_lfns(lfnsfile, nfiles)
     if not xmlfile :
         # Assumes lfnsfile ends with .py
         xmlfile = lfnsfile[:-3] + '_catalog.xml'
@@ -204,3 +210,128 @@ def get_access_urls(lfns, outputfile = None, urls = None, protocol = 'xroot') :
 ''' + pprint.pformat(urls))
     print 'Got URLs for', str(sum(int(bool(url)) for url in urls.values())) + '/' + str(len(urls)), 'LFNs.'
     return urls
+
+def lfn_bk_path(lfn) :
+    '''Get the bookkeping path for the given LFN.'''
+    returnval = dirac_call('dirac-bookkeeping-file-path', '-l', lfn)
+    bkpath = returnval['stdout'].splitlines()[-1].split()[2]
+    return bkpath
+
+def prod_for_path(path) :
+    '''Get the productions for the given path.'''
+    returnval = dirac_call('dirac-bookkeeping-prod4path', '-B', path)
+    prods = []
+    for line in returnval['stdout'].splitlines()[2:-1] :
+        name, prod = line.strip().split(': ')
+        prods.append((name, prod))
+    return prods
+
+def production_info(prod) :
+    '''Get info on the given production from bkk. This requires a lot of string parsing and is thus a bit fragile.'''
+    returnval = dirac_call('dirac-bookkeeping-production-information', prod)
+    stdout = returnval['stdout']
+    splitlines = stdout.splitlines()
+    path = splitlines[-1].strip()
+    splitlines = filter(None, stdout.split('-----------------------'))
+    steps = []
+    for info in splitlines[1:-1] :
+        infodict = {}
+        for line in filter(None, info.splitlines()) :
+            name, val = line.split(':')
+            infodict[name.strip()] = val.strip()
+        if infodict :
+            infodict['OptionFiles'] = infodict['OptionFiles'].split(';')
+            steps.append(infodict)
+        
+    return {'info' : stdout,
+            'path' : path,
+            'steps' : steps}
+
+def get_data_settings(fname, debug = False, forapp = 'DaVinci', fout = None) :
+    '''Get the tags and data type for the data in the given file of LFNs.'''
+    if debug :
+        def output(*vals) :
+            print ' '.join(str(v) for v in vals)
+    else :
+        def output(*vals) :
+            pass
+
+    lfn = extract_lfns(fname, 1)[0]
+    output('LFN:', lfn)
+    inputtype = lfn.split('.')[-1].upper()
+    output('InputType:', inputtype)
+
+    bkpath = lfn_bk_path(lfn)
+    output('Bk path:', bkpath)
+
+    prods = prod_for_path(bkpath)
+    output('Productions:', prods)
+    prods = filter(lambda x : not 'merge' in x[0].lower(), prods)
+    prod = prods[-1][1]
+
+    output('Production:', prod)
+
+    info = production_info(prod)
+    output('Production info:', info)
+
+    # Get the tags.
+    opts = 'from Configurables import {0}\n'.format(forapp)
+    dddb = None
+    conddb = None
+    for step in info['steps'][::-1] :
+        if not step['DDB'].startswith('from') :
+            dddb = step['DDB']
+        if not step['CONDDB'].startswith('from') :
+            conddb = step['CONDDB']
+        if dddb and conddb :
+            break
+    if not (conddb and dddb) :
+        if not debug :
+            get_data_settings(fname, True, forapp)
+        raise Exception('Failed to get data tags for file {0}!'.format(fname))
+
+    opts += '''{0}().CondDBtag = {1!r}
+{0}().DDDBtag = {2!r}
+'''.format(forapp, conddb, dddb)
+
+    # Check if it's simulation
+    simulation = False
+    if 'sim' in conddb.lower() :
+        simulation = True
+        opts += '{0}().Simulation = True\n'.format(forapp)
+    
+    # Get the DataType.
+    datatype = None
+    for step in info['steps'][::-1] :
+        for opt in step['OptionFiles'] :
+            if 'DataType' in opt :
+                datatype = os.path.split(opt)[1].replace('DataType-', '').replace('.py', '')
+                break
+        if datatype :
+            break
+    if not datatype :
+        if not debug :
+            get_data_settings(fname, True, forapp)
+        raise Exception('Failed to get data type for file {0}!'.format(fname))
+
+    if forapp in ('DaVinci', 'Brunel') :
+        opts += '{0}().DataType = {1!r}\n'.format(forapp, datatype)
+    else :
+        opts += '''if 'DataType' in {0}().getProperties() :
+    {0}().DataType = {1!r}
+'''.format(forapp, datatype)
+
+    opts += '{0}().InputType = {1!r}\n'.format(forapp, inputtype)
+        
+    if not fout :
+        fout = fname.replace('.py', '_settings.py')
+    with open(fout, 'w') as f :
+        f.write("""'''
+{0}
+'''
+
+""".format(info['info']))
+        f.write(opts)
+    
+    return {'CondDBtag' : conddb, 'DDDBtag' : dddb, 'DataType' : datatype, 'Simulation' : simulation,
+            'InputType' : inputtype}
