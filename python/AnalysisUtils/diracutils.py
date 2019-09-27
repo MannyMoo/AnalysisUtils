@@ -96,7 +96,7 @@ def get_lfns_from_path(path, outputfile = None) :
         path = '/' + '/'.join(filter(None, path.split('/')[1:]))
     return get_lfns('-B', path, outputfile = outputfile)
 
-def gen_xml_catalog(fname, lfns, rootvar = None) :
+def gen_xml_catalog(fname, lfns, rootvar = None, ignore = False, extraargs = []) :
     '''Generate the xml catalog for the given LFNs and the .py file to include in your options.
     'rootvar' can be the name of an environment variable which will be used as the root for the
      path of the .xml in the .py. 'fname' can also include unexpanded environment variables,
@@ -112,8 +112,12 @@ def gen_xml_catalog(fname, lfns, rootvar = None) :
             fname = xmlname
 
     args = ['dirac-bookkeeping-genXMLCatalog', '-l', ','.join(lfns), '--Catalog=' + xmlname]
+    if ignore :
+        args += ['--Ignore']
     if lfns[0].lower().endswith('.rdst') :
         args += '--Depth=2'
+    if extraargs :
+        args += list(extraargs)
 
     returnvals = dirac_call(*args)
     if not os.path.exists(xmlname) :
@@ -122,7 +126,7 @@ Exit code: {1}
 stdout:
 '''.format(' '.join(args), returnvals['exitcode']) + returnvals['stdout'] + '''
 stderr:
-''' + returnval['stderr'])
+''' + returnvals['stderr'])
 
     with open(pyname, 'w') as f :
         f.write('''
@@ -132,7 +136,7 @@ FileCatalog().Catalogs += [ 'xmlcatalog_file:{0}' ]
 '''.format(fname))
     return returnvals
 
-def gen_xml_catalog_from_file(lfnsfile, xmlfile = None, rootvar = None, nfiles = 0) :
+def gen_xml_catalog_from_file(lfnsfile, xmlfile = None, rootvar = None, nfiles = 0, ignore = False, extraargs = []) :
     '''Extract the LFNs from lfnsfile and pass them to gen_xml_catalog.'''
 
     with open(os.path.expandvars(lfnsfile)) as f :
@@ -149,7 +153,7 @@ def gen_xml_catalog_from_file(lfnsfile, xmlfile = None, rootvar = None, nfiles =
     if not xmlfile :
         # Assumes lfnsfile ends with .py
         xmlfile = lfnsfile[:-3] + '_catalog.xml'
-    return gen_xml_catalog(fname = xmlfile, lfns = lfns, rootvar = rootvar)
+    return gen_xml_catalog(fname = xmlfile, lfns = lfns, rootvar = rootvar, ignore = ignore, extraargs = extraargs)
 
 def get_step_info(stepid) :
     '''Get info on the given production step.'''
