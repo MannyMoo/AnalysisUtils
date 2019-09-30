@@ -222,8 +222,11 @@ def prod_for_path(path) :
     returnval = dirac_call('dirac-bookkeeping-prod4path', '-B', path)
     prods = []
     for line in returnval['stdout'].splitlines()[2:-1] :
-        name, prod = line.strip().split(': ')
-        prods.append((name, prod))
+        try :
+            name, prod = line.strip().split(': ')
+        except ValueError :
+            continue
+        prods.append((name, prod.split(',')))
     return prods
 
 def production_info(prod) :
@@ -269,7 +272,8 @@ def get_data_settings(fname, debug = False, forapp = 'DaVinci', fout = None) :
     prods = prod_for_path(bkpath)
     output('Productions:', prods)
     prods = filter(lambda x : not 'merge' in x[0].lower(), prods)
-    prod = prods[-1][1]
+    name, prods = prods[-1]
+    prod = prods[-1]
 
     output('Production:', prod)
 
