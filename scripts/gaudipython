@@ -1,0 +1,7 @@
+#!/bin/bash
+
+if [ -z "$(which ipython 2> /dev/null)" ] ; then
+    python -i $(which gaudipython.py) $@
+else
+    ipython -i $(which gaudipython.py) $@
+fi
