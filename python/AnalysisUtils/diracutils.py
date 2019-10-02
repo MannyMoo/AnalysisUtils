@@ -64,6 +64,28 @@ decaypaths = \\
 '''.format(evttype, exclusions, pprint.pformat(_pathsdict)))
     return _pathsdict
 
+def write_lfns(fout, *lfns, **kwargs) :
+    '''Write the given LFNs to an options file. If 'comment' is in kwargs, it's written first 
+    as a multiline comment.'''
+
+    lines = ''
+    comment = kwargs.get('comment', '')
+    if comment :
+        lines += """'''
+{0}
+'''
+""".format(comment)
+    
+    lines += '''
+from GaudiConf import IOHelper
+IOHelper('ROOT').inputFiles(
+{0},
+clear=True)
+'''.format(pprint.pformat(['LFN:' + lfn for lfn in lfns]))
+    
+    with open(fout, 'w') as f :
+        f.write(lines)
+
 def get_lfns(*args, **kwargs) :
     '''Get the LFNs from the given BK query. If the keyword arg 'outputfile' is given,
     the LFNs are saved as an LHCb dataset to that file.'''
@@ -73,16 +95,9 @@ def get_lfns(*args, **kwargs) :
     lfns = [lfn.split()[0] for lfn in lfns]
     if not kwargs.get('outputfile', None) :
         return lfns
-    with open(kwargs['outputfile'], 'w') as f :
-        f.write('''# lb-run LHCbDirac/prod dirac-bookkeeping-get-files {0}
 
-from Gaudi.Configuration import *
-from GaudiConf import IOHelper
-IOHelper('ROOT').inputFiles(
-{1},
-clear=True)
-'''.format(' '.join(args), pprint.pformat(['LFN:' + lfn for lfn in lfns])))
-        
+    write_lfns(kwargs['outputfile'], *lfns,
+               comment = 'lb-run LHCbDirac/prod dirac-bookkeeping-get-files {0}'.format(' '.join(args)))        
     return lfns
 
 def get_lfns_from_path(path, outputfile = None) :
