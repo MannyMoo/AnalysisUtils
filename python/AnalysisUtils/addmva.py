@@ -37,7 +37,7 @@ class MVACalc(object) :
             vtype = v.get('Type')
             self.tmvavararrays[form] = array(vtype.lower(), [0])
             self.reader.AddSpectator(form, self.tmvavararrays[form])
-            self.treevars[form] = TreeFormula(form, inputtree)
+            self.treevars[form] = TreeFormula(form, form, inputtree)
 
         self.reader.BookMVA(self.weightsvar, self.weightsfile)
 
