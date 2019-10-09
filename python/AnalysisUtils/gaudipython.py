@@ -28,9 +28,10 @@ def main() :
     '''Main function. Imports the options, starts the AppMgr, then executes any post config options.'''
     from argparse import ArgumentParser
     parser = ArgumentParser()
-    parser.add_argument('options', nargs = '*', help = 'Options to import before initialising the AppMgr')
-    parser.add_argument('--postoptions', nargs = '*', help = 'Options to execute after initialising the AppMgr')
-
+    parser.add_argument('options', nargs = '*', help = 'Options to import before initialising the AppMgr', default = [])
+    parser.add_argument('--postoptions', nargs = '*', help = 'Options to execute after initialising the AppMgr', default = [])
+    parser.add_argument('--batch', '-b', action = 'store_true', help = 'Run in batch mode, rather than interactive.')
+    
     args = parser.parse_args()
     import_opts(*args.options)
     
@@ -38,4 +39,13 @@ def main() :
 
     namespace = import_opts(*args.postoptions, namespace = namespace) 
 
+    if args.batch:
+        return namespace
+    
+    try:
+        import IPython
+        IPython.start_ipython(argv = [], user_ns = namespace)
+    except ImportError:
+        import code
+        code.interact(local = namespace)
     return namespace
