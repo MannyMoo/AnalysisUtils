@@ -137,32 +137,48 @@ class DataLibrary(object) :
         variables created when making the RooDataSet.'''
         return os.path.join(self.friends_directory(dataname), 'SelectedTree', 'SelectedTree.root')
 
+    def retrieve_dataset(self, dataname, varnames) :
+        '''Retrieve a previously saved RooDataSet for the given dataset and check that it contains
+        variables with the given names. If the file or RooDataSet doesn't exist, or the RooDataSet
+        contains different variables, returns None.'''
+
+        tree = self.get_data(dataname)
+
+        fout = ROOT.TFile.Open(self.dataset_file_name(dataname))
+        if not fout or fout.IsZombie():
+            return
+        if self.ignorecompilefails :
+            variables = self._variables(tree)
+            checkvarnames = filter(lambda name : check_formula_compiles(variables[name]['formula'],
+                                                                        tree),
+                                   varnames)
+        else :
+            checkvarnames = varnames
+        checkvarnames = set(checkvarnames)
+        dataset = fout.Get(dataname)
+        datanames = set(dataset.get(0).contentsString().split(','))
+        if dataset and checkvarnames == datanames :
+            fout.Close()
+            return dataset
+        print 'Variables for dataset', dataname, 'have changed. Expected', checkvarnames, 'found', datanames, '. RooDataSet will be updated.'
+        fout.Close()
+
     def get_dataset(self, dataname, varnames = None, update = False) :
         '''Get the RooDataSet of the given name. It's created/updated on demand. varnames is the 
         set of variables to be included in the RooDataSet. They must correspond to those defined 
         in the variables module. If the list of varnames changes or if update = True the 
         RooDataSet will be recreated.'''
 
-        tree = self.get_data(dataname)
-
         if not varnames :
             varnames = self.varnames
         if not update :
-            fout = ROOT.TFile.Open(self.dataset_file_name(dataname))
-            if fout :
-                if self.ignorecompilefails :
-                    checkvarnames = filter(lambda name : check_formula_compiles(self.variables[name]['formula'],
-                                                                                tree),
-                                           varnames)
-                else :
-                    checkvarnames = varnames
-                dataset = fout.Get(dataname)
-                if dataset and set(checkvarnames) == set(dataset.get(0).contentsString().split(',')) :
-                    fout.Close()
-                    return dataset
-                fout.Close()
+            dataset = self.retrieve_dataset(dataname, varnames)
+            if dataset:
+                return dataset
 
         print 'Making RooDataSet for', dataname
+
+        tree = self.get_data(dataname)
         variables = self._variables(tree)
         selectedtreefile = self.selected_file_name(dataname)
         selectedtreedir = os.path.dirname(selectedtreefile)
