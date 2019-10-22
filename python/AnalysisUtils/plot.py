@@ -108,3 +108,39 @@ def save_eps(canv, name) :
         name += '.eps'
     canv.SaveAs(name)
     subprocess.call(['sed', '-i', '/CreationDate/d', name])
+
+def get_y_minmax(histo, witherrs = True):
+    '''Get the min & max y value of a histo or sequence of histos, optionally including
+    the range of the bin errors.'''
+    if not isinstance(histo, ROOT.TH1):
+        vals = tuple(get_y_minmax(h, witherrs) for h in histo)
+        ymin = min(v[0] for v in vals)
+        ymax = max(v[1] for v in vals)
+        return ymin, ymax
+
+    if witherrs:
+        ymin = min(histo.GetBinContent(i) - histo.GetBinError(i) for i in xrange(histo.GetNbinsX()))
+        ymax = max(histo.GetBinContent(i) + histo.GetBinError(i) for i in xrange(histo.GetNbinsX()))
+    else:
+        ymin = min(histo.GetBinContent(i) for i in xrange(histo.GetNbinsX()))
+        ymax = max(histo.GetBinContent(i) for i in xrange(histo.GetNbinsX()))
+    return ymin, ymax
+
+def set_y_range(histo, padding = 0.1, symmetric = False):
+    '''Set the y range of a histo or sequence of histos, padding with a fraction of the max - min range,
+    optionally symmetric about zero.'''
+
+    ymin, ymax = get_y_minmax(histo)
+    if symmetric:
+        ymax = max(abs(ymin), abs(ymax))
+        ymin = -ymax
+    yrange = ymax - ymin
+    ymax += padding * yrange
+    ymin -= padding * yrange
+
+    if not isinstance(histo, ROOT.TH1):
+        for h in histo:
+            h.GetYaxis().SetRangeUser(ymin, ymax)
+    else:
+        histo.GetYaxis().SetRangeUser(ymin, ymax)
+    return ymin, ymax

@@ -203,9 +203,9 @@ class TreeFormulaList(object) :
 
     __slots__ = ('forms',)
 
-    def __init__(self, tree, formula1, formula2, *formulae) :
+    def __init__(self, tree, formula1, *formulae) :
         '''Takes the TTree and the formulae.'''
-        self.forms = tuple(TreeFormula(form, form, tree) for form in (formula1, formula2) + formulae)
+        self.forms = tuple(TreeFormula(form, form, tree) for form in (formula1,) + formulae)
 
     def is_ok(self) :
         '''Check that all formulae compile.'''
