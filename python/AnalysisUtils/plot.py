@@ -3,8 +3,8 @@
 import ROOT, subprocess
 
 # Colours, marker and line styles for histos, so you can assign them in a loop.
-goodcolours = (ROOT.kBlack, ROOT.kBlue, ROOT.kRed, ROOT.kGreen+2, ROOT.kMagenta+1, ROOT.kCyan+3,
-               ROOT.kOrange+2, ROOT.kYellow+2)
+goodcolours = (ROOT.kBlack, ROOT.kBlue, ROOT.kRed, ROOT.kGreen+2, ROOT.kMagenta+1, ROOT.kCyan+1,
+               ROOT.kOrange+1, ROOT.kYellow+1)
 goodcolors = goodcolours
 goodmarkers = (ROOT.kPlus, ROOT.kStar, ROOT.kCircle, ROOT.kMultiply, ROOT.kFullDotLarge,
                ROOT.kFullSquare, ROOT.kFullTriangleUp, ROOT.kFullTriangleDown, ROOT.kOpenCircle,
