@@ -64,6 +64,8 @@ def build_mc_unbiased_selection(decayDesc, arrow = '==>', refitpvs = True) :
     comb.Preambulo = preamble
     comb.DaughtersCuts = daughtercuts
     comb.ReFitPVs = refitpvs
+    if refitpvs:
+        comb.MotherCut += ' & BPVVALID()'
     sel = Selection(algname,
                     Algorithm = comb,
                     RequiredSelections = list(inputs))
