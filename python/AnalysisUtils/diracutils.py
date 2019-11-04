@@ -265,7 +265,7 @@ def production_info(prod) :
             'path' : path,
             'steps' : steps}
 
-def get_data_settings(fname, debug = False, forapp = 'DaVinci', fout = None) :
+def get_data_settings(fname, debug = False, forapp = 'DaVinci', fout = None, latestTagsForRealData = True) :
     '''Get the tags and data type for the data in the given file of LFNs.'''
     if debug :
         def output(*vals) :
@@ -276,10 +276,15 @@ def get_data_settings(fname, debug = False, forapp = 'DaVinci', fout = None) :
 
     lfn = extract_lfns(fname, 1)[0]
     output('LFN:', lfn)
+
+    opts = 'from Configurables import {0}\n'.format(forapp)
+
+    # Get the input type.
     inputtype = lfn.split('.')[-1].upper()
     if inputtype == 'XDIGI' :
         inputtype = 'DIGI'
     output('InputType:', inputtype)
+    opts += '{0}().InputType = {1!r}\n'.format(forapp, inputtype)
 
     bkpath = lfn_bk_path(lfn)
     output('Bk path:', bkpath)
@@ -295,32 +300,6 @@ def get_data_settings(fname, debug = False, forapp = 'DaVinci', fout = None) :
     info = production_info(prod)
     output('Production info:', info)
 
-    # Get the tags.
-    opts = 'from Configurables import {0}\n'.format(forapp)
-    dddb = None
-    conddb = None
-    for step in info['steps'][::-1] :
-        if not step['DDB'].startswith('from') :
-            dddb = step['DDB']
-        if not step['CONDDB'].startswith('from') :
-            conddb = step['CONDDB']
-        if dddb and conddb :
-            break
-    if not (conddb and dddb) :
-        if not debug :
-            get_data_settings(fname, True, forapp)
-        raise Exception('Failed to get data tags for file {0}!'.format(fname))
-
-    opts += '''{0}().CondDBtag = {1!r}
-{0}().DDDBtag = {2!r}
-'''.format(forapp, conddb, dddb)
-
-    # Check if it's simulation
-    simulation = False
-    if 'sim' in conddb.lower() :
-        simulation = True
-        opts += '{0}().Simulation = True\n'.format(forapp)
-    
     # Get the DataType.
     datatype = None
     for step in info['steps'][::-1] :
@@ -342,8 +321,37 @@ def get_data_settings(fname, debug = False, forapp = 'DaVinci', fout = None) :
     {0}().DataType = {1!r}
 '''.format(forapp, datatype)
 
-    opts += '{0}().InputType = {1!r}\n'.format(forapp, inputtype)
-        
+    # Get the tags.
+    dddb = None
+    conddb = None
+    for step in info['steps'][::-1] :
+        if not step['DDB'].startswith('from') :
+            dddb = step['DDB']
+        if not step['CONDDB'].startswith('from') :
+            conddb = step['CONDDB']
+        if dddb and conddb :
+            break
+    if not (conddb and dddb) :
+        if not debug :
+            get_data_settings(fname, True, forapp)
+        raise Exception('Failed to get data tags for file {0}!'.format(fname))
+
+    # Check if it's simulation
+    simulation = False
+    if 'sim' in conddb.lower() :
+        simulation = True
+        opts += '{0}().Simulation = True\n'.format(forapp)
+
+    if simulation or not latestTagsForRealData:
+        opts += '''{0}().CondDBtag = {1!r}
+{0}().DDDBtag = {2!r}
+'''.format(forapp, conddb, dddb)
+    else:
+        opts +='''
+from Configurables import CondDB
+CondDB().LatestGlobalTagByDataType = {0}().getProp('DataType')
+'''.format(forapp)
+            
     if not fout :
         fout = fname.replace('.py', '_settings.py')
     with open(fout, 'w') as f :

@@ -13,6 +13,7 @@ parser.add_argument('--nfiles', default = 0, help = 'Number of files to generate
 parser.add_argument('--settings', '-s', action = 'store_true', help = 'Flag to save the data settings.')
 parser.add_argument('--ignore', action = 'store_true', help = 'Whether to ignore inaccessible files'
                     ' when generating the xml catalog.')
+parser.add_argument('--originaltags', action = 'store_true', help = 'Use original tags for real data (default - latest tags).')
 
 args = parser.parse_args()
 
@@ -21,4 +22,4 @@ if args.genxml :
     gen_xml_catalog_from_file(args.lfnsfile, xmlfile = args.xmlfile, rootvar = args.rootvar,
                               nfiles = int(args.nfiles), ignore = args.ignore)
 if args.settings :
-    get_data_settings(args.lfnsfile)
+    get_data_settings(args.lfnsfile, latestTagsForRealData = (not args.originaltags))
