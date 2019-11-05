@@ -109,28 +109,35 @@ def save_eps(canv, name) :
     canv.SaveAs(name)
     subprocess.call(['sed', '-i', '/CreationDate/d', name])
 
-def get_y_minmax(histo, witherrs = True):
+def get_y_minmax(histo, witherrs = True, ignorezero = False):
     '''Get the min & max y value of a histo or sequence of histos, optionally including
-    the range of the bin errors.'''
+    the range of the bin errors. If ignorezero is True, values of exactly zero are ignored.'''
     if not isinstance(histo, ROOT.TH1):
-        vals = tuple(get_y_minmax(h, witherrs) for h in histo)
+        vals = tuple(get_y_minmax(h, witherrs, ignorezero) for h in histo)
         ymin = min(v[0] for v in vals)
         ymax = max(v[1] for v in vals)
         return ymin, ymax
 
     if witherrs:
-        ymin = min(histo.GetBinContent(i) - histo.GetBinError(i) for i in xrange(histo.GetNbinsX()))
-        ymax = max(histo.GetBinContent(i) + histo.GetBinError(i) for i in xrange(histo.GetNbinsX()))
+        valsminus = (histo.GetBinContent(i) - histo.GetBinError(i) for i in xrange(histo.GetNbinsX()))
+        valsplus = (histo.GetBinContent(i) + histo.GetBinError(i) for i in xrange(histo.GetNbinsX()))
     else:
-        ymin = min(histo.GetBinContent(i) for i in xrange(histo.GetNbinsX()))
-        ymax = max(histo.GetBinContent(i) for i in xrange(histo.GetNbinsX()))
+        valsminus = (histo.GetBinContent(i) for i in xrange(histo.GetNbinsX()))
+        valsplus = (histo.GetBinContent(i) for i in xrange(histo.GetNbinsX()))
+
+    if ignorezero:
+        ymin = min(v for v in valsminus if v != 0.)
+        ymax = max(v for v in valsplus if v != 0.)
+    else:
+        ymin = min(valsminus)
+        ymax = max(valsplus)
     return ymin, ymax
 
-def set_y_range(histo, padding = 0.1, symmetric = False):
+def set_y_range(histo, padding = 0.1, symmetric = False, ignorezero = False):
     '''Set the y range of a histo or sequence of histos, padding with a fraction of the max - min range,
     optionally symmetric about zero.'''
 
-    ymin, ymax = get_y_minmax(histo)
+    ymin, ymax = get_y_minmax(histo, ignorezero = ignorezero)
     if symmetric:
         ymax = max(abs(ymin), abs(ymax))
         ymin = -ymax
