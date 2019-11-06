@@ -249,11 +249,18 @@ def parse_decay_descriptor(desc) :
     daughters = []
     try :
         while rhs :
-            # need to handle [], and sub-brackets. 
-            if rhs[0][0] == '(' :
-                i = 1 
-                while i < len(rhs) and ')' not in rhs[i] :
-                    i += 1
+            # TODO: need to handle []
+            if rhs[0].startswith('(') :
+                npar = 1
+                for i in xrange(1, len(rhs)):
+                    if rhs[i].startswith('('):
+                        npar += 1
+                    if rhs[i].endswith(')'):
+                        npar -= 1
+                    if npar == 0:
+                        break
+                if npar != 0:
+                    raise ValueError('Failed to parse ' + repr(originaldesc) + ' - mismatched parentheses!')
                 daughters.append(parse_decay_descriptor(' '.join(rhs[:i+1])))
                 rhs = rhs[i+1:]
             else :
