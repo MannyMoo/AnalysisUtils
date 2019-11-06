@@ -88,7 +88,9 @@ clear=True)
 
 def get_lfns(*args, **kwargs) :
     '''Get the LFNs from the given BK query. If the keyword arg 'outputfile' is given,
-    the LFNs are saved as an LHCb dataset to that file.'''
+    the LFNs are saved as an LHCb dataset to that file. If the 'stats' keyword arg is given
+    and is True, the stats for the BK query are added as a comment to the top of the file.
+    An additional comment can be added to the top of the output file with the 'comment' kwarg.'''
     
     result = dirac_call('dirac-bookkeeping-get-files', *args)
     lfns = filter(lambda line : line.startswith('/lhcb'), result['stdout'].splitlines())
@@ -96,11 +98,17 @@ def get_lfns(*args, **kwargs) :
     if not kwargs.get('outputfile', None) :
         return lfns
 
+    comment = 'lb-run LHCbDirac/prod dirac-bookkeeping-get-files {0}'.format(' '.join(args))
+    if kwargs.get('stats', False):
+        stats = dirac_call('dirac-bookkeeping-get-stats', *args)
+        comment += '\n\n' + stats['stdout']
+    if 'comment' in kwargs:
+        comment += '\n' + comment
     write_lfns(kwargs['outputfile'], *lfns,
-               comment = 'lb-run LHCbDirac/prod dirac-bookkeeping-get-files {0}'.format(' '.join(args)))        
+               comment = comment)        
     return lfns
 
-def get_lfns_from_path(path, outputfile = None) :
+def get_lfns_from_path(path, outputfile = None, stats = True, dataQuality = 'OK') :
     '''Get the LFNs from the given BK path.'''
     # Move the event type to the end of the path
     if path.startswith('evt+std:/') :
@@ -109,7 +117,10 @@ def get_lfns_from_path(path, outputfile = None) :
     # Remove any sim+std:/ prefix.
     elif ':/' in path :
         path = '/' + '/'.join(filter(None, path.split('/')[1:]))
-    return get_lfns('-B', path, outputfile = outputfile)
+    args = ['-B', path]
+    if dataQuality:
+        args += ['--DQFlags', dataQuality]
+    return get_lfns(*args, outputfile = outputfile, stats = stats)
 
 def gen_xml_catalog(fname, lfns, rootvar = None, ignore = False, extraargs = []) :
     '''Generate the xml catalog for the given LFNs and the .py file to include in your options.
@@ -151,13 +162,28 @@ FileCatalog().Catalogs += [ 'xmlcatalog_file:{0}' ]
 '''.format(fname))
     return returnvals
 
+def get_bk_data(path, outputfile, stats = True, dataQuality = 'OK', genxml = True, xmlfile = None, rootvar = None,
+                nfiles = 0, ignore = False, settings = True, latestTagsForRealData = True):
+    '''Get bookkeeping data from the given path and save it to the output file. Optionally saving the xml
+    catalog and data settings as well.'''
+    get_lfns_from_path(path = path, outputfile = outputfile, stats = stats, dataQuality = dataQuality)
+    if genxml:
+        gen_xml_catalog_from_file(outputfile, xmlfile = xmlfile, rootvar = rootvar, nfiles = nfiles, ignore = ignore)
+    if settings:
+        get_data_settings(outputfile, latestTagsForRealData = latestTagsForRealData)
+
 def extract_lfns(lfnsfile, nfiles = 0, raiseexecpt = True) :
     '''Extract LFNs from a data file.'''
     
     with open(os.path.expandvars(lfnsfile)) as f :
         contents = f.read()
-    # This assumes that the first list in the options file is the list of LFNs.
-    lfns = eval(contents[contents.index('['):contents.index(']')+1])
+    
+    # Find the first instance of LFN:
+    istart = contents.index('LFN:')-10
+    # Then find the start and end of the list.
+    istart = contents.index('[', istart)
+    iend = contents.index(']', istart)
+    lfns = eval(contents[istart:iend+1])
     lfns = [lfn.replace('LFN:', '') for lfn in lfns]
     if nfiles :
         lfns = lfns[:nfiles]
@@ -301,14 +327,26 @@ def get_data_settings(fname, debug = False, forapp = 'DaVinci', fout = None, lat
     output('Production info:', info)
 
     # Get the DataType.
+    # First try the LFN path.
     datatype = None
-    for step in info['steps'][::-1] :
-        for opt in step['OptionFiles'] :
-            if 'DataType' in opt :
-                datatype = os.path.split(opt)[1].replace('DataType-', '').replace('.py', '')
-                break
-        if datatype :
+    years = range(2010, 2013) + range(2015, 2019)
+    datatypes = {year : ['Collision' + str(year)[2:], 'MC/' + str(year)] for year in years}
+    for dtype, matches in datatypes.items():
+        if any(match in lfn for match in matches):
+            datatype = dtype
             break
+    # If that fails, try the options.
+    if not datatype:
+        for step in info['steps'][::-1] :
+            for opt in step['OptionFiles'] :
+                opt = os.path.split(opt)[1]
+                for test in 'DataType-', 'Tesla_Data_', 'Tesla_Simulation_':
+                    if re.match(test + '[0-9]*\.py', opt) :
+                        datatype = opt[len(test):-3]
+                        break
+            if datatype :
+                break
+
     if not datatype :
         if not debug :
             get_data_settings(fname, True, forapp)
