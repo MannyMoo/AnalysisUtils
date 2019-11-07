@@ -330,7 +330,7 @@ def get_data_settings(fname, debug = False, forapp = 'DaVinci', fout = None, lat
     # First try the LFN path.
     datatype = None
     years = range(2010, 2013) + range(2015, 2019)
-    datatypes = {year : ['Collision' + str(year)[2:], 'MC/' + str(year)] for year in years}
+    datatypes = {str(year) : ['Collision' + str(year)[2:], 'MC/' + str(year)] for year in years}
     for dtype, matches in datatypes.items():
         if any(match in lfn for match in matches):
             datatype = dtype
