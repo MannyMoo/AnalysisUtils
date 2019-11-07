@@ -105,19 +105,23 @@ class DataLibrary(object) :
                 t.AddFriend(self.get_data(friend))
         return t
 
-    def dataset_file_name(self, dataname) :
-        '''Get the name of the file containing the RooDataset corresponding to the given
-        dataset name.'''
+    def dataset_dir(self, dataname):
+        '''Get the directory where RooDataSets etc will be saved for this dataset.'''
         info = self._get_data_info(dataname)
         if 'datasetdir' in info :
             dirname = info['datasetdir']
         else :
             dirname = os.path.dirname(info['files'][0])
-        return os.path.join(dirname, dataname + '_Dataset.root')
+        return dirname
+
+    def dataset_file_name(self, dataname) :
+        '''Get the name of the file containing the RooDataset corresponding to the given
+        dataset name.'''
+        return os.path.join(self.dataset_dir(dataname), dataname + '_Dataset.root')
 
     def friends_directory(self, dataname) :
         '''Get the directory containing friends of this dataset that will be automatically loaded.'''
-        return self.dataset_file_name(dataname)[:-len('_Dataset.root')] + '_Friends'
+        return os.path.join(self.dataset_dir(dataname), dataname + '_Friends')
 
     def friend_file_name(self, dataname, friendname, treename, number = None, makedir = False) :
         '''Get the name of a file that will be automatically added as a friend to the given dataset,
@@ -337,10 +341,26 @@ class DataLibrary(object) :
         return h
 
 class BinnedFitData(object) :
+    '''Bin a RooDataSet in one or two variables and make RooDataHists of another variable in those bins.'''
 
     def __init__(self, name, outputdir, workspace, roodata, variable, binvariable, bins, 
                  binvariable2 = None, bins2 = None, nbinsx = 100, xmin = None, xmax = None,
                  get = False, update = False) :
+        '''name: name of the file to save to, and the RooDataHist
+        outputdir: directory to save to
+        workspace: the AnalysisUtils.workspace.Workspace instance
+        roodata: the RooDataSet to extract the histos from
+        variable: the variable to make the RooDataHists for
+        binvariable: the variable to bin in
+        bins: the list of bin edges for the bin variable
+        binvariable2: optional second binning variable
+        bins2: optional bins for second binning variable
+        nbinsx: the number of bins for 'variable'
+        xmin: the minimum value for 'variable'
+        xmax: the maxmimum value for 'variable'
+        get: whether to retrieve or build the datasets on initialisation
+        update: whether to rebuild the datasets.'''
+
         self.name = name
         if not os.path.exists(outputdir) :
             os.makedirs(outputdir)
@@ -387,6 +407,7 @@ class BinnedFitData(object) :
             self.get(update)
 
     def build(self) :
+        '''Build the RooDataHists and save them to the output file.'''
         fout = ROOT.TFile.Open(self.outputfname, 'recreate')
         
         self.binvar = self.workspace.roovar(self.name + '_bin', xmin = 0, xmax = len(self.selections)-1,
@@ -427,6 +448,7 @@ class BinnedFitData(object) :
         fout.Close()
 
     def retrieve(self) :
+        '''Retrieve the RooDataHists from the output file.'''
         if not is_tfile_ok(self.outputfname) :
             return False
         fout = ROOT.TFile.Open(self.outputfname)
@@ -445,12 +467,26 @@ class BinnedFitData(object) :
         return True
 
     def get(self, update = False) :
+        '''Try to retrieve, if that fails, call build.'''
         if update or not self.retrieve() :
             self.build()
 
+    def categories(self):
+        '''Get the sorted list of categories.'''
+        return sorted(self.catvals.values())
+
+    def bin_names(self):
+        '''Get the sorted list of bin names.'''
+        return sorted(self.catvals.keys())
+
     def make_roosimultaneous(self, pdfs, pref = '') :
+        '''Make a RooSimultaneous in the bin category variable and add the given PDFs. 'pdfs' should be a dict
+        with keys the category names (as given by categories() or bin_names()) and values the PDFs for each category value.'''
+
         simul = ROOT.RooSimultaneous(pref + self.name + '_pdf', '', self.binvar)
         for catname, pdf in pdfs.items() :
+            if catname in self.catvals:
+                catname = self.catvals[catname]
             if simul.addPdf(pdf, catname) :
                 raise ValueError('Something went wrong adding PDF {0} for category {1}'.format(pdf.GetName(),
                                                                                                catname))
