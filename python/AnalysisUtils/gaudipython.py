@@ -18,11 +18,32 @@ def import_opts(*opts, **kwargs) :
     '''Import the given options files. If kwargs contains a 'namespace' argument, that's used as the
     namespace in which to exec the options.'''
     namespace = kwargs.get('namespace', {})
+    ok = True
     for opt in opts :
         if opt.endswith('.py') :
             print 'importOptions', opt
-            execfile(opt, namespace)
+            try:
+                execfile(opt, namespace)
+            except Exception as exception:
+                print 'Exception:', exception.message
+                ok = False
+        if not ok:
+            break
+    return namespace, ok
+
+def start_ipython(batch, namespace):
+    '''Start ipython interactive interpreter.'''
+    if batch:
+        return namespace
+    
+    try:
+        import IPython
+        IPython.start_ipython(argv = [], user_ns = namespace)
+    except ImportError:
+        import code
+        code.interact(local = namespace)
     return namespace
+    
 
 def main() :
     '''Main function. Imports the options, starts the AppMgr, then executes any post config options.'''
@@ -33,19 +54,11 @@ def main() :
     parser.add_argument('--batch', '-b', action = 'store_true', help = 'Run in batch mode, rather than interactive.')
     
     args = parser.parse_args()
-    import_opts(*args.options)
-    
+    namespace, ok = import_opts(*args.options)
+    if not ok:
+        return start_ipython(args.batch, namespace)
+
     namespace = start_appmgr()
 
-    namespace = import_opts(*args.postoptions, namespace = namespace) 
-
-    if args.batch:
-        return namespace
-    
-    try:
-        import IPython
-        IPython.start_ipython(argv = [], user_ns = namespace)
-    except ImportError:
-        import code
-        code.interact(local = namespace)
-    return namespace
+    namespace, ok = import_opts(*args.postoptions, namespace = namespace) 
+    return start_ipython(args.batch, namespace)

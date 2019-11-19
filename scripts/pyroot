@@ -1,0 +1,13 @@
+#!/usr/bin/env python
+
+import ROOT, IPython, sys
+
+ifile = 0
+for argv in sys.argv[1:]:
+    if argv.endswith('.root'):
+        globals()['file_' + str(ifile)] = ROOT.TFile.Open(argv)
+        ifile += 1
+    elif argv.endswith('.py'):
+        execfile(argv)
+
+IPython.start_ipython(argv = [], user_ns = globals())
