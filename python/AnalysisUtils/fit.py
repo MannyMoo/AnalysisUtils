@@ -35,8 +35,9 @@ def multi_gauss(workspace, name, variable, mean, sigmas, sigmamax, sigmaerror = 
                                                   error = sigmaerror))
 
     if not isinstance(mean, (tuple, list)):
-        mean = [mean] * len(sigmas)
-    means = [make_mean(m) for m in mean]
+        means = [make_mean(mean)] * len(sigmas)
+    else:
+        means = [make_mean(m, i) for i, m in enumerate(mean)]
 
     firstfrac, firstsigma = sigmas[0]
     firstfrac = workspace.roovar(name + '_frac_0', val = firstfrac, xmin = 0., xmax = 1.,
@@ -84,12 +85,18 @@ def replace_variable(workspace, pdf, newname, oldvar, newvar):
     workspace.Import(newpdf)
     return newpdf
 
-def translate_scale_pdf(workspace, pdf, newname, variable, translation, scale):
+def translate_scale_pdf(workspace, pdf, newname, variable, translation, scale, mean = None):
     '''Make a copy of the given PDF with the given new name, translated and scaled in the given variable.
-    variable, translation and scale should be RooRealVars.'''
+    variable, translation and scale should be RooRealVars. Optionally, translate and scale around the given mean.'''
 
-    c0 = workspace.factory('expr', newname + '_c0', '"-{0}/{1}"'.format(translation.GetName(), scale.GetName()),
-                           translation, scale)
+    if not mean:
+        c0 = workspace.factory('expr', newname + '_c0', '"-{0}/{1}"'.format(translation.GetName(), scale.GetName()),
+                               translation, scale)
+    else:
+        c0 = workspace.factory('expr', newname + '_c0',
+                               '"-{0}/{1} + {2} - {2}/{1}"'.format(translation.GetName(), scale.GetName(),
+                                                                   mean.GetName()),
+                               translation, scale, mean)
     c1 = workspace.factory('expr', newname + '_c1', '"1./{0}"'.format(scale.GetName()), scale)
     transvar = workspace.factory('RooLinearVar', newname + '_trans', variable, c1, c0)
     return replace_variable(workspace, pdf, newname, variable, transvar)
