@@ -37,6 +37,10 @@ def multi_gauss(workspace, name, variable, mean, sigmas, sigmamax, sigmaerror = 
     if not isinstance(mean, (tuple, list)):
         means = [make_mean(mean)] * len(sigmas)
     else:
+        if len(mean) != len(sigmas):
+            raise ValueError('''Must have the same number of means and sigmas!
+Means ({0}): {1!r},
+Sigmas ({2}): {3!r}'''.format(len(mean), mean, len(sigmas), sigmas))
         means = [make_mean(m, i) for i, m in enumerate(mean)]
 
     firstfrac, firstsigma = sigmas[0]
@@ -85,7 +89,7 @@ def replace_variable(workspace, pdf, newname, oldvar, newvar):
     workspace.Import(newpdf)
     return newpdf
 
-def translate_scale_pdf(workspace, pdf, newname, variable, translation, scale, mean = None):
+def translate_and_scale_pdf(workspace, pdf, newname, variable, translation, scale, mean = None):
     '''Make a copy of the given PDF with the given new name, translated and scaled in the given variable.
     variable, translation and scale should be RooRealVars. Optionally, translate and scale around the given mean.'''
 
