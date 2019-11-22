@@ -1,6 +1,7 @@
 from DecayTreeTuple.Configuration import DecayTreeTuple
 from Configurables import MCDecayTreeTuple
 from AnalysisUtils.Selections.mcselections import build_mc_unbiased_selection
+from AnalysisUtils.ntuplling import add_velo_track_assoc
 
 def _make_tuple(desc, suff, ToolList, TupleType, arrow = '->', **kwargs) :
     dtt = TupleType(desc.get_full_alias() + suff, **kwargs)

@@ -26,6 +26,10 @@ include_directories(${Boost_INCLUDE_DIRS} ${ROOT_INCLUDE_DIRS})
 #                   INCLUDE_DIRS Boost ROOT
 #                   LINK_LIBRARIES Boost ROOT)
 
+gaudi_add_module(AnalysisUtils
+                 src/*.cpp
+                 LINK_LIBRARIES LinkerEvent MCEvent PhysEvent TrackEvent RelationsLib DaVinciKernelLib DaVinciMCKernelLib)
+
 # # ensure that genreflex is not called twice (in parallel builds)
 # add_dependencies(AnalysisUtilsLib AnalysisUtilsGen)
 
