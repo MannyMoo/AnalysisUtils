@@ -177,6 +177,9 @@ class ParticleDescriptor(object) :
                 elif i in aliases :
                     daughter.alias = aliases[i]
 
+    def clear_aliases(self):
+        self.set_aliases([None for i in self])
+
     def set_labX_aliases(self) :
         for i, daughter in enumerate(self) :
             daughter.alias = 'lab' + str(i)

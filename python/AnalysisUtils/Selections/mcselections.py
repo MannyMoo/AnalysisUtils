@@ -15,10 +15,12 @@ mcbasicinputs = {'K+' : ['StdAllNoPIDsKaons'],
 selections = {}
 
 def build_mc_unbiased_selection(decayDesc, arrow = '==>', refitpvs = True) :
-    '''Make a selection sequence for the given decay descriptor that has no cuts besides
+    '''Make a selection for the given decay descriptor that has no cuts besides
     truth matching.'''
 
     preamble = [ "from LoKiPhysMC.decorators import *" , "from LoKiPhysMC.functions import mcMatch" ]
+    decayDesc = decayDesc.copy()
+    decayDesc.clear_aliases()
     decayDesc.set_carets(False)
     decayDescCC = decayDesc.copy()
     decayDescCC.cc = True
@@ -73,6 +75,10 @@ def build_mc_unbiased_selection(decayDesc, arrow = '==>', refitpvs = True) :
     return sel
 
 def make_mc_unbiased_seq(desc, arrow = '==>', refitpvs = True) :
+    '''Make a selection sequence for the given decay descriptor that has no cuts besides
+    truth matching.'''
+    desc = desc.copy()
+    desc.clear_aliases()
     sel = build_mc_unbiased_selection(desc, arrow, refitpvs)
     selseq = SelectionSequence(desc.get_full_alias() + '_MCUnbiasedSeq',
                                TopSelection = sel)
