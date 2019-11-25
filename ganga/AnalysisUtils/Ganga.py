@@ -18,8 +18,10 @@ class OptionsFile(object):
 
     def data_files(self, matchpatterns = (), vetosuffices = ('_settings.py', '_catalog.py')):
         '''Get data options file from the given directory.'''
+        if isinstance(matchpatterns, str):
+            matchpatterns = (matchpatterns,)
         fnames = glob.glob(self('*.py'))
-        if not matches:
+        if not matchpatterns:
             filterfunc = lambda fname: not any(fname.endswith(suff) for suff in vetosuffices)
         else:
             filterfunc = lambda fname: (any(re.search(pat, fname) for pat in matchpatterns)
@@ -109,7 +111,7 @@ ApplicationMgr().EvtMax = {0}
     j.outputfiles = [LocalFile(f.namePattern) for f in j.outputfiles]
     return j
             
-def remove_tests(jobs, status = ('completed', 'failed', 'killed'), namestart = 'Test-'):
+def remove_tests(jobs, statuses = ('completed', 'failed', 'killed'), namestart = 'Test-'):
     '''Remove test jobs (names starting with namestart) with the given statuses.'''
     for j in jobs:
         if j.name.startswith(namestart) and j.status in statuses:
