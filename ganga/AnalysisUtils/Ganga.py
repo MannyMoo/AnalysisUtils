@@ -3,7 +3,6 @@
 from GangaCore.GPI import Local, LocalFile, GaudiExec, Job, box, LHCbDataset
 import os, glob
 
-
 class OptionsFile(object):
     '''Get an options file path from the given options directory.'''
 
@@ -16,6 +15,16 @@ class OptionsFile(object):
         if not os.path.isabs(fname):
             return os.path.join(self.optsdir, fname)
         return fname
+
+    def data_files(self, vetosuffices = ('_settings.py', '_catalog.py')):
+        '''Get data options file from the given directory.'''
+        fnames = glob.glob(self('*.py'))
+        return filter(lambda fname : not any(fname.endswith(suff) for suff in vetosuffices),
+                      fnames)
+
+# Options directory and options file getter.
+optsdir = os.path.expandvars('$ANALYSISUTILSROOT/options/')
+options_file = OptionsFile(optsdir)
 
 def gaudi_exec(app = '', **kwargs):
     '''Get a GaudiExec instance for the current project.'''
