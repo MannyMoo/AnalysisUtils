@@ -1,7 +1,7 @@
 '''General handy functions for Ganga.'''
 
 from GangaCore.GPI import Local, LocalFile, GaudiExec, Job, box, LHCbDataset
-import os, glob
+import os, glob, re
 
 class OptionsFile(object):
     '''Get an options file path from the given options directory.'''
@@ -16,11 +16,15 @@ class OptionsFile(object):
             return os.path.join(self.optsdir, fname)
         return fname
 
-    def data_files(self, vetosuffices = ('_settings.py', '_catalog.py')):
+    def data_files(self, matchpatterns = (), vetosuffices = ('_settings.py', '_catalog.py')):
         '''Get data options file from the given directory.'''
         fnames = glob.glob(self('*.py'))
-        return filter(lambda fname : not any(fname.endswith(suff) for suff in vetosuffices),
-                      fnames)
+        if not matches:
+            filterfunc = lambda fname: not any(fname.endswith(suff) for suff in vetosuffices)
+        else:
+            filterfunc = lambda fname: (any(re.search(pat, fname) for pat in matchpatterns)
+                                        and not any(fname.endswith(suff) for suff in vetosuffices))
+        return filter(filterfunc, fnames)
 
 # Options directory and options file getter.
 optsdir = os.path.expandvars('$ANALYSISUTILSROOT/options/')
