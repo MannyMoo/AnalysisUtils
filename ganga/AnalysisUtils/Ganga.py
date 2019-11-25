@@ -3,6 +3,20 @@
 from GangaCore.GPI import Local, LocalFile, GaudiExec, Job, box, LHCbDataset
 import os, glob
 
+
+class OptionsFile(object):
+    '''Get an options file path from the given options directory.'''
+
+    def __init__(self, optsdir):
+        '''Constructor: takes the options directory, which will be expanded and made absolulte.'''
+        self.optsdir = os.path.abspath(os.path.expandvars(optsdir))
+
+    def __call__(self, fname):
+        '''Get an options file path from the given options directory.'''
+        if not os.path.isabs(fname):
+            return os.path.join(self.optsdir, fname)
+        return fname
+
 def gaudi_exec(app = '', **kwargs):
     '''Get a GaudiExec instance for the current project.'''
     key = app.upper() + 'DEV_PROJECT_ROOT'
