@@ -26,7 +26,7 @@ class OptionsFile(object):
         else:
             filterfunc = lambda fname: (any(re.search(pat, fname) for pat in matchpatterns)
                                         and not any(fname.endswith(suff) for suff in vetosuffices))
-        return filter(filterfunc, fnames)
+        return list(filter(filterfunc, fnames))
 
 # Options directory and options file getter.
 optsdir = os.path.expandvars('$ANALYSISUTILSROOT/options/')
@@ -35,13 +35,13 @@ options_file = OptionsFile(optsdir)
 def gaudi_exec(app = '', **kwargs):
     '''Get a GaudiExec instance for the current project.'''
     key = app.upper() + 'DEV_PROJECT_ROOT'
-    keys = filter(lambda k : k.endswith(key), os.environ)
+    keys = list(filter(lambda k : k.endswith(key), os.environ))
     if not keys:
         raise ValueError("Couldn't find project root (environment variable ending with {0})".format(key))
     dirname = os.environ[keys[0]]
     if not 'platform' in kwargs:
         # Find build directories.
-        builds = filter(lambda x : os.path.isdir(x), glob.glob(os.path.join(dirname, 'build.*')))
+        builds = list(filter(lambda x : os.path.isdir(x), glob.glob(os.path.join(dirname, 'build.*'))))
         if builds:
             # Sort by modification time and take the most recent.
             builds = sorted(builds, key = (lambda d : os.stat(d).st_mtime))
@@ -132,7 +132,7 @@ def get_output_access_urls(jobs, outputfile) :
                 failures.append(sj)
     with open(outputfile, 'w') as f :
         f.write('urls = ' + pformat(urls).replace('\n', '\n' + ' ' * len('urls = ')))
-    print 'Got URLs for {0}/{1} subjobs'.format(len(urls), sum(len(j.subjobs.select(status = 'completed')) for j in jobs))
+    print('Got URLs for {0}/{1} subjobs'.format(len(urls), sum(len(j.subjobs.select(status = 'completed')) for j in jobs)))
     return urls, failures
 
 def get_output_lfns(jobs, outputfile) :
@@ -150,5 +150,5 @@ def get_output_lfns(jobs, outputfile) :
                 failures.append(sj)
     with open(outputfile, 'w') as f :
         f.write('lfns = ' + pformat(lfns).replace('\n', '\n' + ' ' * len('lfns = ')))
-    print 'Got LFNs for {0}/{1} subjobs'.format(len(lfns), sum(len(j.subjobs.select(status = 'completed')) for j in jobs))
+    print('Got LFNs for {0}/{1} subjobs'.format(len(lfns), sum(len(j.subjobs.select(status = 'completed')) for j in jobs)))
     return lfns, failures
