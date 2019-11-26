@@ -14,7 +14,7 @@ find_package(ROOT COMPONENTS Core RIO Hist Graf Graf3d Postscript Gpad
 # override the genreflex call to wrap it in the right environment
 # set(ROOT_genreflex_CMD ${env_cmd} --xml ${env_xml} ${ROOT_genreflex_CMD})
 
-include_directories(${Boost_INCLUDE_DIRS} ${ROOT_INCLUDE_DIRS})
+include_directories(SYSTEM ${Boost_INCLUDE_DIRS} ${ROOT_INCLUDE_DIRS})
 # gaudi_add_dictionary(AnalysisUtils
 #                      dict/AnalysisUtilsDict.h dict/AnalysisUtilsDict.xml
 #                      SPLIT_CLASSDEF)
@@ -28,7 +28,8 @@ include_directories(${Boost_INCLUDE_DIRS} ${ROOT_INCLUDE_DIRS})
 
 gaudi_add_module(AnalysisUtils
                  src/*.cpp
-                 LINK_LIBRARIES LinkerEvent MCEvent PhysEvent TrackEvent RelationsLib DaVinciKernelLib DaVinciMCKernelLib)
+                 LINK_LIBRARIES LinkerEvent MCEvent PhysEvent TrackEvent RelationsLib DaVinciKernelLib DaVinciMCKernelLib
+		 INCLUDE_DIRS Boost ROOT)
 
 # # ensure that genreflex is not called twice (in parallel builds)
 # add_dependencies(AnalysisUtilsLib AnalysisUtilsGen)
