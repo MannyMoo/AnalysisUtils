@@ -2,6 +2,11 @@
 
 from GangaCore.GPI import Local, LocalFile, GaudiExec, Job, box, LHCbDataset
 import os, glob, re
+import sys
+sys.path.insert(0, os.path.expandvars('$ANALYSISUTILSROOT/python/AnalysisUtils'))
+from diracutils import get_access_urls
+sys.path.pop(0)
+from pprint import pformat
 
 class OptionsFile(object):
     '''Get an options file path from the given options directory.'''
@@ -32,13 +37,35 @@ class OptionsFile(object):
 optsdir = os.path.expandvars('$ANALYSISUTILSROOT/options/')
 options_file = OptionsFile(optsdir)
 
-def gaudi_exec(app = '', **kwargs):
-    '''Get a GaudiExec instance for the current project.'''
+def run_dir(app = ''):
+    '''Get the current application project root.'''
     key = app.upper() + 'DEV_PROJECT_ROOT'
     keys = list(filter(lambda k : k.endswith(key), os.environ))
     if not keys:
         raise ValueError("Couldn't find project root (environment variable ending with {0})".format(key))
-    dirname = os.environ[keys[0]]
+    return os.environ[keys[0]]
+
+def run(args, app = '', raiseonfailure = True):
+    '''Run a command in the current project.'''
+    runexe = os.path.join(run_dir(app), 'run')
+    args = [runexe] + args
+    proc = subprocess.Popen(args, stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+    stdout, stderr = proc.communicate()
+    exitcode = proc.poll()
+    returnval = {'stdout' : stdout, 'stderr' : stderr, 'exitcode' : exitcode}
+    if 0 != exitcode and raiseonfailure :
+        raise OSError('''Call to {0!r} failed!
+Exit code: {1}
+stdout:
+'''.format(' '.join(args), returnval['exitcode']) + returnval['stdout'] + '''
+stderr:
+''' + returnval['stderr'])
+    
+    return returnval
+
+def gaudi_exec(app = '', **kwargs):
+    '''Get a GaudiExec instance for the current project.'''
+    dirname = run_dir(app)
     if not 'platform' in kwargs:
         # Find build directories.
         builds = list(filter(lambda x : os.path.isdir(x), glob.glob(os.path.join(dirname, 'build.*'))))
@@ -117,41 +144,51 @@ def remove_tests(jobs, statuses = ('completed', 'failed', 'killed'), namestart =
         if j.name.startswith(namestart) and j.status in statuses:
             j.remove()
 
-def get_output_access_urls(jobs, outputfile) :
-    '''Get access URLs for job output files.'''
-    if not hasattr(jobs, '__iter__') :
-        jobs = [jobs]
-    urls = []
-    failures = []
-    for job in jobs :
-        for sj in job.subjobs.select(status = 'completed') :
-            fout = sj.outputfiles[0]
-            try :
-                urls.append(fout.accessURL()[0])
-            except :
-                failures.append(sj)
-    with open(outputfile, 'w') as f :
-        f.write('urls = ' + pformat(urls).replace('\n', '\n' + ' ' * len('urls = ')))
-    print('Got URLs for {0}/{1} subjobs'.format(len(urls), sum(len(j.subjobs.select(status = 'completed')) for j in jobs)))
-    return urls, failures
-
-def get_output_lfns(jobs, outputfile) :
-    '''Get LFNs for job output files.'''
+def get_output_lfns(jobs, outputfile, urlsfile = None, overwrite = False) :
+    '''Get LFNs for job output files and save them to the given file. Optionally their access URLs and save
+    them to 'urlsfile'. If 'urlsfile' exists and overwrite = False, the urls will only be obtained for LFNs
+    that don't yet have a URL.'''
     if not hasattr(jobs, '__iter__') :
         jobs = [jobs]
     lfns = []
     failures = []
+    jobinfos = {}
     for job in jobs :
+        ntot = len(job.subjobs)
+        ncomplete = 0
+        nok = 0
+        nfail = 0
         for sj in job.subjobs.select(status = 'completed') :
+            ncomplete += 1
             fout = sj.outputfiles[0]
             try :
                 lfns.append(fout.lfn)
+                nok += 1
             except :
                 failures.append(sj)
+                nfail += 1
+        jobinfo = {'id' : job.id,
+                   'nsubjobs' : ntot,
+                   'ncomplete' : ncomplete,
+                   'nLFNOK' : nok,
+                   'nLFNFail' : nfail}
+        jobinfos[job.name] = jobinfo
     with open(outputfile, 'w') as f :
+        f.write('jobinfos = ' + pformat(jobinfos).replace('\n', '\n' + ' ' * len('jobinfos = ')) + '\n')
         f.write('lfns = ' + pformat(lfns).replace('\n', '\n' + ' ' * len('lfns = ')))
     print('Got LFNs for {0}/{1} subjobs'.format(len(lfns), sum(len(j.subjobs.select(status = 'completed')) for j in jobs)))
-    return lfns, failures
+    if not urlsfile:
+        return lfns, failures
+    
+    urls = None
+    if not overwrite and os.path.exists(urlsfile):
+        dirname, fname = os.path.split(urlsfile)
+        sys.path.insert(0, dirname)
+        mod = __import__(fname[:-3], fromlist = ['urls'])
+        urls = mod.urls
+        sys.path.pop(0)
+    urls = get_access_urls(lfns, outputfile = urlsfile, urls = urls)
+    return lfns, failures, urls
 
 def get_dataset(jobs, excludedataset = None):
     '''Get an LHCbDataset from the inputdata of the given jobs.'''

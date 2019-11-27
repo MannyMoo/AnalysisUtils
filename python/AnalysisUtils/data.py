@@ -87,9 +87,12 @@ class DataLibrary(object) :
         info = self._get_data_info(name)
         return info
 
-    def get_data(self, name) :
+    def get_data(self, name, ifile = None, addfriends = True) :
         '''Get the dataset of the given name.'''
         info = self.get_data_info(name)
+        files = info['files']
+        if ifile:
+            files = files[ifile:ifile+1]
         t = make_chain(info['tree'], *info['files'])
         aliases = info.get('aliases', {})
         set_prefix_aliases(t, aliases)
@@ -100,9 +103,15 @@ class DataLibrary(object) :
             t.selection = info['selection']
         for varname, varinfo in self._variables(t).items() :
             t.SetAlias(varname, varinfo['formula'])
-        if 'friends' in info :
+        if addfriends and 'friends' in info :
             for friend in info['friends'] :
-                t.AddFriend(self.get_data(friend))
+                if ifile != None :
+                    if len(self.get_data_info(friend)['files']) == len(info['files']):
+                        t.AddFriend(self.get_data(friend, ifile))
+                    else:
+                        print 'Warning: skipping friend', friend, 'of', name, 'due to different n. files'
+                else:
+                    t.AddFriend(self.get_data(friend))
         return t
 
     def dataset_dir(self, dataname):
