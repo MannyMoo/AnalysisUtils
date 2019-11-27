@@ -152,3 +152,19 @@ def get_output_lfns(jobs, outputfile) :
         f.write('lfns = ' + pformat(lfns).replace('\n', '\n' + ' ' * len('lfns = ')))
     print('Got LFNs for {0}/{1} subjobs'.format(len(lfns), sum(len(j.subjobs.select(status = 'completed')) for j in jobs)))
     return lfns, failures
+
+def get_dataset(jobs, excludedataset = None):
+    '''Get an LHCbDataset from the inputdata of the given jobs.'''
+    data = LHCbDataset()
+    for j in jobs:
+        data.files += j.inputdata.files
+    if excludedataset:
+        data = data.difference(excludedataset)
+    return data
+
+def copy_job(j, onlyfailed = True, excludedataset = None):
+    '''Copy a job, by default only selecting input files from failed subjobs.'''
+    jc = j.copy(True)
+    if onlyfailed:
+        jc.inputdata = get_dataset(j.subjobs.select(status = 'failed'), excludedataset)
+    return jc
