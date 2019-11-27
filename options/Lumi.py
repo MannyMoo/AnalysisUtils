@@ -1,3 +1,3 @@
 from Configurables import DaVinci
 
-DaVinci().Lumi = DaVinci().getProp('Simulation')
+DaVinci().Lumi = (not DaVinci().getProp('Simulation'))
