@@ -269,6 +269,9 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
     will be returned (the list will be empty if the TTree has no friends).'''
 
     tree.SetBranchStatus('*', True)
+    # Need to use an EventList rather than passing the string to TTree::CopyTree
+    # so that we can copy friend trees that don't contain all the required
+    # branches for the selection.
     if selection and isinstance(selection, str) :
         selection = get_event_list(tree, selection)
         selection.SetDirectory(None)
