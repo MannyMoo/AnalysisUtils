@@ -1,12 +1,9 @@
 '''General handy functions for Ganga.'''
 
 from GangaCore.GPI import Local, LocalFile, GaudiExec, Job, box, LHCbDataset
-import os, glob, re
-import sys
-sys.path.insert(0, os.path.expandvars('$ANALYSISUTILSROOT/python/AnalysisUtils'))
-from diracutils import get_access_urls
-sys.path.pop(0)
+import os, glob, re, sys
 from pprint import pformat
+from AnalysisUtils.diracutils import get_access_urls
 
 class OptionsFile(object):
     '''Get an options file path from the given options directory.'''

@@ -1,3 +1,4 @@
+from __future__ import print_function
 import subprocess, re, pprint, os
 from collections import defaultdict
 
@@ -112,7 +113,7 @@ def get_lfns_from_path(path, outputfile = None, stats = True, dataQuality = 'OK'
     '''Get the LFNs from the given BK path.'''
     # Move the event type to the end of the path
     if path.startswith('evt+std:/') :
-        splitpath = filter(None, path.split('/'))
+        splitpath = list(filter(None, path.split('/')))
         path = '/' + '/'.join(splitpath[1:3] + splitpath[4:-1] + splitpath[3:4] + splitpath[-1:])
     # Remove any sim+std:/ prefix.
     elif ':/' in path :
@@ -206,6 +207,7 @@ def get_step_info(stepid) :
     '''Get info on the given production step.'''
     
     args = ['python', '-c', '''
+from __future__ import print_function
 import sys, subprocess
 from DIRAC.Core.Base.Script import parseCommandLine
 parseCommandLine() # Need this for some reason.
@@ -215,7 +217,7 @@ bk = BookkeepingClient()
 stepid = '%s'
 info = bk.getAvailableSteps({'StepId' : stepid})
 info = dict(zip(info['Value']['ParameterNames'], info['Value']['Records'][0]))
-print repr(info)
+print(repr(info))
 ''' % stepid]
     result = dirac_call(*args)
     info = eval(result['stdout'])
@@ -249,7 +251,7 @@ def get_access_urls(lfns, outputfile = None, urls = None, protocol = 'xroot') :
         with open(outputfile, 'w') as f :
             f.write('''urls = \\
 ''' + pprint.pformat(urls))
-    print 'Got URLs for', str(sum(int(bool(url)) for url in urls.values())) + '/' + str(len(urls)), 'LFNs.'
+    print('Got URLs for', str(sum(int(bool(url)) for url in urls.values())) + '/' + str(len(urls)), 'LFNs.')
     return urls
 
 def lfn_bk_path(lfn) :
@@ -276,7 +278,7 @@ def production_info(prod) :
     stdout = returnval['stdout']
     splitlines = stdout.splitlines()
     path = splitlines[-1].strip()
-    splitlines = filter(None, stdout.split('-----------------------'))
+    splitlines = list(filter(None, stdout.split('-----------------------')))
     steps = []
     for info in splitlines[1:-1] :
         infodict = {}
@@ -295,7 +297,7 @@ def get_data_settings(fname, debug = False, forapp = 'DaVinci', fout = None, lat
     '''Get the tags and data type for the data in the given file of LFNs.'''
     if debug :
         def output(*vals) :
-            print ' '.join(str(v) for v in vals)
+            print(' '.join(str(v) for v in vals))
     else :
         def output(*vals) :
             pass
@@ -317,7 +319,7 @@ def get_data_settings(fname, debug = False, forapp = 'DaVinci', fout = None, lat
 
     prods = prod_for_path(bkpath)
     output('Productions:', prods)
-    prods = filter(lambda x : not 'merge' in x[0].lower(), prods)
+    prods = list(filter(lambda x : not 'merge' in x[0].lower(), prods))
     name, prods = prods[-1]
     prod = prods[-1]
 
