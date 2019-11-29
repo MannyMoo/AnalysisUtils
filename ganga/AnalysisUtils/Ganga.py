@@ -202,3 +202,19 @@ def copy_job(j, onlyfailed = True, excludedataset = None):
     if onlyfailed:
         jc.inputdata = get_dataset(j.subjobs.select(status = 'failed'), excludedataset)
     return jc
+
+def remove_dirac_output(j):
+    '''Remove DiracFiles for the given job.'''
+    for f in j.outputfiles:
+        if isinstance(f, DiracFile) and f.lfn:
+            f.remove()
+
+def remove_job(j, removeoutput = True):
+    '''Remove a job and its Dirac output files.'''
+    if not removeoutput:
+        j.remove()
+        return
+    for sj in j.subjobs:
+        remove_dirac_output(sj)
+    remove_dirac_output(j)
+    j.remove()
