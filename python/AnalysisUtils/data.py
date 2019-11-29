@@ -87,13 +87,16 @@ class DataLibrary(object) :
         info = self._get_data_info(name)
         return info
 
-    def get_data(self, name, ifile = None, addfriends = True) :
-        '''Get the dataset of the given name.'''
+    def get_data(self, name, ifile = None, iend = None, addfriends = True) :
+        '''Get the dataset of the given name. Optionally for one (ifile) or a range (ifile:iend) of files.
+        If addfriends = False, friend trees aren't added.'''
         info = self.get_data_info(name)
         files = info['files']
-        if ifile:
-            files = files[ifile:ifile+1]
-        t = make_chain(info['tree'], *info['files'])
+        if None != ifile:
+            if None == iend:
+                iend = ifile+1
+            files = files[ifile:iend]
+        t = make_chain(info['tree'], *files)
         aliases = info.get('aliases', {})
         set_prefix_aliases(t, aliases)
         if 'variables' in info :
@@ -107,7 +110,7 @@ class DataLibrary(object) :
             for friend in info['friends'] :
                 if ifile != None :
                     if len(self.get_data_info(friend)['files']) == len(info['files']):
-                        t.AddFriend(self.get_data(friend, ifile))
+                        t.AddFriend(self.get_data(friend, ifile, iend))
                     else:
                         print 'Warning: skipping friend', friend, 'of', name, 'due to different n. files'
                 else:
@@ -231,10 +234,28 @@ class DataLibrary(object) :
             mergeddata[mergedname] = merged
         self.make_getters(mergeddata)
 
-    def add_single_file_datasets(self, name) :
-        '''Add datasets split by files for the given dataset name.'''
-        info = get_data_info(name)
+    def get_matching_datasets(self, name, *names):
+        '''Get the names of all datasets that match any of the given regex names.'''
+        names = (name,) + names
+        datasets = list(filter(lambda dataset: any(re.search(name, dataset) for name in names), self.datasets()))
+        return datasets
         
+    def get_merged_data(self, name, *names):
+        '''Get a TChain that's the combination of all datasets matching the given regex names.'''
+        datasets = self.get_matching_datasets(name, *names)
+        data = self.get_data(datasets[0])
+        for dataset in datasets[1:]:
+            data.Add(self.get_data(dataset))
+        return data
+
+    def get_merged_dataset(self, name, *names, **kwargs):
+        '''Get the total RooDataSet for all datasets matching the given regex names. 'kwargs' is passed to get_dataset,
+        and can contain any of the arguments it expects.'''
+        datasets = self.get_matching_datasets(name, *names)
+        data = self.get_dataset(datasets[0], **kwargs)
+        for dataset in datasets[1:]:
+            data.append(self.get_dataset(dataset, **kwargs))
+        return data
 
     def check_dataset(self, name) :
         '''Check that all files exist, are unique, contain the required TTree, and all the TTrees have 
