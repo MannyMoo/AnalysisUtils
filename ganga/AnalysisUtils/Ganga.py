@@ -1,6 +1,6 @@
 '''General handy functions for Ganga.'''
 
-from GangaCore.GPI import Local, LocalFile, GaudiExec, Job, box, LHCbDataset
+from GangaCore.GPI import Local, LocalFile, GaudiExec, Job, box, LHCbDataset, DiracFile
 import os, glob, re, sys
 from pprint import pformat
 from AnalysisUtils.diracutils import get_access_urls

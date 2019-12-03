@@ -1,5 +1,5 @@
 from __future__ import print_function
-import subprocess, re, pprint, os
+import subprocess, re, pprint, os, sys
 from collections import defaultdict
 
 def dirac_call(*args, **kwargs) :
@@ -16,7 +16,7 @@ def dirac_call(*args, **kwargs) :
     proc = subprocess.Popen(('which', 'LbLogin.sh'),
                             stdout = subprocess.PIPE, stderr = subprocess.PIPE)
     stdout, stderr = proc.communicate()
-    lblogin = stdout.strip()
+    lblogin = stdout.strip().decode(sys.stdout.encoding)
 
     cmd = '''. {0} >& /dev/null
 lb-run -c best LHCbDirac/prod {1}'''.format(lblogin,
@@ -25,6 +25,8 @@ lb-run -c best LHCbDirac/prod {1}'''.format(lblogin,
     proc = subprocess.Popen(('bash', '-c', cmd), env = env, stdout = subprocess.PIPE,
                             stderr = subprocess.PIPE)
     stdout, stderr = proc.communicate()
+    stdout = stdout.decode(sys.stdout.encoding)
+    stderr = stderr.decode(sys.stdout.encoding)
     exitcode = proc.poll()
     returnval = {'stdout' : stdout, 'stderr' : stderr, 'exitcode' : exitcode}
     if 0 != exitcode and kwargs.get('raiseonfailure', True) :
