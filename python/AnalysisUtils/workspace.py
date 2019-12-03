@@ -1,6 +1,7 @@
 '''Python wrapper for a RooWorkspace. The workspace should be used to create 
 all RooVars and RooPDFs to avoid any memory leak/ownership issues.'''
 
+from AnalysisUtils.RooFit import RooFit
 import os, ROOT, re
 from ROOT import TFile
 

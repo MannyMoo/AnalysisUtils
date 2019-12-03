@@ -1,5 +1,6 @@
 '''Functions to access all the relevant datasets for the analysis, both TTrees and RooDataSets.'''
 
+from AnalysisUtils.RooFit import RooFit
 import os, ROOT, pprint, cppyy, glob, re
 from AnalysisUtils.makeroodataset import make_roodataset, make_roodatahist
 from AnalysisUtils.treeutils import make_chain, set_prefix_aliases, check_formula_compiles, is_tfile_ok

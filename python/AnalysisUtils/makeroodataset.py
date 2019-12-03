@@ -2,6 +2,7 @@
 
 '''Functionality needed to make a RooDataSet from a TTree.'''
 
+from AnalysisUtils.RooFit import RooFit
 import ROOT
 from AnalysisUtils.treeutils import TreeFormula, make_chain, TreeBranchAdder
 

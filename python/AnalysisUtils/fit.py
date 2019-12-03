@@ -1,3 +1,4 @@
+from AnalysisUtils.RooFit import RooFit
 import ROOT
 from AnalysisUtils.treeutils import random_string, TreeFormula, TreeBranchAdder, tree_loop
 
