@@ -256,7 +256,8 @@ def has_active_branches(tree) :
     return any(not branch.TestBit(ROOT.kDoNotProcess) for branch in tree.GetListOfBranches())
 
 def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
-              removebranches = (), rename = None, write = False, returnfriends = False) :
+              removebranches = (), rename = None, write = False, returnfriends = False,
+              fname = None, foption = 'recreate') :
     '''Copy the given TTree, optionally applying the given selection, or keeping nentries 
     entries. 'keepbranches' and 'removebranches' can be iterables of string regexes 
     that determine which branches are kept or removed. If both are given, the branches
@@ -287,7 +288,9 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
         for branch in tree.GetListOfBranches() :
             if any(re.search(pattern, branch.GetName()) for pattern in removebranches) :
                 branch.SetStatus(False)
-
+    
+    if fname:
+        fout = ROOT.TFile.Open(fname, foption)
     if nentries > 0 :
         treecopy = tree.CopyTree('', '', int(nentries))
     else :
@@ -328,6 +331,16 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
     if write :
         treecopy.Write()
 
+    # Close the output file then retrieve the trees as TChains.
+    if fname:
+        name = treecopy.GetName()
+        friendnames = [t.GetName() for t in copyfriends]
+        fout.Close()
+        treecopy = ROOT.TChain(name)
+        copyfriends = [ROOT.TChain(n) for n in friendnames]
+        for t in [treecopy] + copyfriends:
+            t.Add(fname)
+            
     if returnfriends :
         return treecopy, copyfriends
 
