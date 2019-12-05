@@ -1,7 +1,7 @@
 '''General handy functions for Ganga.'''
 
-from GangaCore.GPI import Local, LocalFile, GaudiExec, Job, box, LHCbDataset, DiracFile
-import os, glob, re, sys
+from GangaCore.GPI import Local, LocalFile, GaudiExec, Job, box, LHCbDataset, DiracFile, queues
+import os, glob, re, sys, shutil
 from pprint import pformat
 from AnalysisUtils.diracutils import get_access_urls
 
@@ -218,3 +218,30 @@ def remove_job(j, removeoutput = True):
         remove_dirac_output(sj)
     remove_dirac_output(j)
     j.remove()
+
+def mv_file(outputfile, dest):
+    '''Move a job output file to the given destination, downloading it first if necessary.'''
+    if hasattr(outputfile, 'get'):
+        try:
+            outputfile.get()
+        except:
+            return False
+    shutil.move(os.path.join(outputfile.localDir, outputfile.namePattern), dest)
+    return True
+
+def mv_output(j, outputdir, useQueues = True, zfill = 3):
+    '''Move the ouptut files of a job to a single directory, renaming them with number suffices.'''
+    for sj in j.subjobs.select(status = 'completed'):
+        for f in sj.outputfiles:
+            splitname = f.namePattern.split('.')
+            suffix = '_' + str(sj.id).zfill(zfill)
+            if len(splitname) > 1:
+                splitname[-2] = splitname[-2] + suffix
+            else:
+                splitname[0] = splitname[0] + suffix
+            dest = os.path.join(outputdir, '.'.join(splitname))
+            if useQueues:
+                queues.add(mv_file, args = (f, dest))
+            else:
+                mv_file(f, dest)
+
