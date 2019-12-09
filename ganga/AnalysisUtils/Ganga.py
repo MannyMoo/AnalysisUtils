@@ -109,19 +109,6 @@ def resubmit_failed(j) :
     if j.status == 'failed' :
         j.resubmit()
 
-def mv_job_output(j, destDir) :
-    '''Move output .root files to the given directory, numbering them according to job
-    no and subjob no.'''
-    if not os.path.exists(destDir) :
-        os.makedirs(destDir)
-    
-    export(j, os.path.join(destDir, 'job.ganga'))
-    for sj in j.subjobs :
-        for fullname in glob.glob(os.path.join(sj.outputdir, '*.root')) :
-            dirName, fname = os.path.split(fullname)
-            destname = os.path.join(destDir, fname.replace('.root', '_' + str(j.id) + '_' + str(sj.id).zfill(3) + '.root'))
-            os.rename(fullname, destname)
-
 def test_job(j, nevts = 1000, nfiles = 3) :
     '''Make a local test job with the given number of events and files.'''
     j = j.copy(True)
@@ -244,4 +231,3 @@ def mv_output(j, outputdir, useQueues = True, zfill = 3):
                 queues.add(mv_file, args = (f, dest))
             else:
                 mv_file(f, dest)
-
