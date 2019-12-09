@@ -1,11 +1,12 @@
 '''Functions to access all the relevant datasets for the analysis, both TTrees and RooDataSets.'''
 
 from AnalysisUtils.RooFit import RooFit
-import os, ROOT, pprint, cppyy, glob, re
+import os, ROOT, pprint, cppyy, glob, re, multiprocessing
 from AnalysisUtils.makeroodataset import make_roodataset, make_roodatahist
-from AnalysisUtils.treeutils import make_chain, set_prefix_aliases, check_formula_compiles, is_tfile_ok
+from AnalysisUtils.treeutils import make_chain, set_prefix_aliases, check_formula_compiles, is_tfile_ok, copy_tree
 from array import array
 from copy import deepcopy
+from multiprocessing import Pool
 
 class DataLibrary(object) :
     '''Contains info on datasets and functions to retrieve them.'''
@@ -117,6 +118,11 @@ class DataLibrary(object) :
                 else:
                     t.AddFriend(self.get_data(friend))
         return t
+
+    # def get_data_frame(self, name):
+    #     '''Get a TDataFrame for the given dataset.'''
+    #     tree = self.get_data(name)
+    #     return ROOT.Experimental.TDataFrame(tree)
 
     def dataset_dir(self, dataname):
         '''Get the directory where RooDataSets etc will be saved for this dataset.'''
@@ -370,6 +376,28 @@ class DataLibrary(object) :
         h = ROOT.TH2F(hname, '', nbins, xmin, xmax, nbinsY, ymin, ymax)
         tree.Draw('{formY} : {form} >> {hname}'.format(**locals()), selection, drawopt)
         return h
+
+    def filter_data(self, dataset, selection, outputname, outputdir,
+                    nthreads = multiprocessing.cpu_count(), zfill = 3):
+        '''Filter a dataset with the given selection and save output to the outputdir/outputname/.'''
+        outputdir = os.path.join(outputdir, outputname)
+        if not os.path.exists(outputdir):
+            os.makedirs(outputdir)
+        pool = Pool(processes = nthreads)
+        fout = os.path.join(outputdir, outputname + '_{0}.root')
+        info = self.get_data_info(dataset)
+        nfiles = len(info['files'])
+        procs = []
+        for i in xrange(nfiles):
+            tree = self.get_data(dataset, i)
+            proc = pool.apply_async(copy_tree, kwds = dict(tree = tree, selection = selection,
+                                                           fname = fout.format(str(i).zfill(zfill)), write = True))
+            procs.append(proc)
+        success = True
+        for proc in procs:
+            proc.wait()
+            success = success and proc.successful()
+        return success
 
 class BinnedFitData(object) :
     '''Bin a RooDataSet in one or two variables and make RooDataHists of another variable in those bins.'''
