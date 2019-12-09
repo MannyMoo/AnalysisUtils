@@ -18,7 +18,7 @@ if '--ganga-version' in argv:
     argv.pop(iver)
 args += argv
 
-def get_args(envvar, opt):
+def get_args(envvar, opt, action = None):
     '''Get ganga configuration args from environment an environment variable.
     envvar: the name of the environment variable
     opt: the name of the configuration option.
@@ -28,9 +28,13 @@ def get_args(envvar, opt):
     '''
     if not envvar in os.environ:
         return []
-    return ['-o', opt + '=' + os.environ[envvar]]
+    val = os.environ[envvar]
+    if action:
+        val = action(val)
+    return ['-o', opt + '=' + val]
 
 args += get_args('GANGASTARTUP', '[Configuration]StartupGPI')
-args += get_args('GANGADIR','[Configuration]gangadir')
+args += get_args('GANGADIR', '[Configuration]gangadir',
+                 action = (lambda x : os.path.join(x, os.environ['USER'])))
 
 subprocess.call(['ganga'] + args, env = env)
