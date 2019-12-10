@@ -8,13 +8,28 @@ from array import array
 from copy import deepcopy
 from multiprocessing import Pool
 
+def _is_ok(tree, fout, selection):
+    '''Check if a TTree has been copied OK to the output file.'''
+    if not is_tfile_ok(fout):
+        return False
+    fout = ROOT.TFile.Open(fout)
+    cptree = fout.Get(os.path.split(tree.GetName())[1])
+    if not cptree:
+        return False
+    nentries = tree.GetEntries(selection)
+    if cptree.GetEntries() != nentries:
+        return False
+    return True
+
 def _parallel_filter(datalib, dataset, ifile, selection, outputdir, outputname, nthreads,
                      zfill, overwrite):
+    '''Filter a single file from a TChain.'''
     fout = os.path.join(outputdir, outputname + '_{0}.root')
     fout = fout.format(str(ifile).zfill(zfill))
-    if not overwrite and is_tfile_ok(fout):
-        return True
     tree = datalib.get_data(dataset, ifile)
+    info = datalib.get_data_info(dataset)
+    if not overwrite and _is_ok(tree, fout, selection):
+        return True
     cptree = copy_tree(tree = tree, selection = selection,
                        fname = fout, write = True)
     return bool(cptree)
