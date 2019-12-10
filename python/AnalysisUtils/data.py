@@ -8,6 +8,17 @@ from array import array
 from copy import deepcopy
 from multiprocessing import Pool
 
+def _parallel_filter(datalib, dataset, ifile, selection, outputdir, outputname, nthreads,
+                     zfill, overwrite):
+    fout = os.path.join(outputdir, outputname + '_{0}.root')
+    fout = fout.format(str(ifile).zfill(zfill))
+    if not overwrite and is_tfile_ok(fout):
+        return True
+    tree = datalib.get_data(dataset, ifile)
+    cptree = copy_tree(tree = tree, selection = selection,
+                       fname = fout, write = True)
+    return bool(cptree)
+
 class DataLibrary(object) :
     '''Contains info on datasets and functions to retrieve them.'''
 
@@ -27,6 +38,14 @@ class DataLibrary(object) :
         self.selection = selection
         self.ignorecompilefails = ignorecompilefails
         self.make_getters(datapaths)
+
+    def __getstate__(self):
+        '''Get state for pickling.'''
+        return {attr : getattr(self, attr) for attr in ('datapaths', 'variables', 'ignorecompilefails', 'selection', 'varnames')}
+
+    def __setstate__(self, state):
+        '''Set state for unpickling.'''
+        self.__init__(**state)
 
     def _getattr(self, tree, attr) :
         '''Get an attr from the tree if it has it, else return the DataLibrary's one.'''
@@ -377,26 +396,32 @@ class DataLibrary(object) :
         tree.Draw('{formY} : {form} >> {hname}'.format(**locals()), selection, drawopt)
         return h
 
-    def filter_data(self, dataset, selection, outputname, outputdir,
-                    nthreads = multiprocessing.cpu_count(), zfill = 3):
+    def parallel_filter_data(self, dataset, selection, outputdir, outputname,
+                             nthreads = multiprocessing.cpu_count(), zfill = 3, overwrite = True):
         '''Filter a dataset with the given selection and save output to the outputdir/outputname/.'''
         outputdir = os.path.join(outputdir, outputname)
         if not os.path.exists(outputdir):
             os.makedirs(outputdir)
+
+        # Do each file individually in parallel.
         pool = Pool(processes = nthreads)
-        fout = os.path.join(outputdir, outputname + '_{0}.root')
         info = self.get_data_info(dataset)
         nfiles = len(info['files'])
         procs = []
         for i in xrange(nfiles):
-            tree = self.get_data(dataset, i)
-            proc = pool.apply_async(copy_tree, kwds = dict(tree = tree, selection = selection,
-                                                           fname = fout.format(str(i).zfill(zfill)), write = True))
+            kwargs = dict(datalib = self, dataset = dataset, selection = selection,
+                          outputdir = outputdir, outputname = outputname, 
+                          nthreads = nthreads, zfill = zfill, ifile = i,
+                          overwrite = overwrite)
+            proc = pool.apply_async(_parallel_filter, 
+                                    kwds = kwargs)
             procs.append(proc)
+            #apply(_parallel_filter, (), kwargs)
         success = True
-        for proc in procs:
+        for i, proc in enumerate(procs):
             proc.wait()
-            success = success and proc.successful()
+            procsuccess = proc.successful()
+            success = success and procsuccess
         return success
 
 class BinnedFitData(object) :
