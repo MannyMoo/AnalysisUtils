@@ -135,6 +135,7 @@ def make_roodataset(dataname, datatitle, tree, nentries = -1, selection = '',
         tree.LoadTree(i)
         if not selvar() :
             nfailsel += 1
+            fill_selected_tree()
             continue
         inrange = True
         for var in treevars :
