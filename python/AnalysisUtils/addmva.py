@@ -87,7 +87,7 @@ def add_mva_friend(datalib, dataname, weightsfile, weightsvar, outputname, perfi
         fout = datalib.friend_file_name(dataname, outputname, outputname + '_tree', i, True)
         if not overwrite and os.path.exists(fout) and is_tfile_ok(fout):
             continue
-        make_mva_tree(tree, weightsfile, weightsvar, outputname + '_tree', outputname, branchname = outputname)
+        make_mva_tree(tree, weightsfile, weightsvar, outputname + '_tree', fout, branchname = outputname)
 
 def main() :
     ROOT.gROOT.SetBatch(True)
