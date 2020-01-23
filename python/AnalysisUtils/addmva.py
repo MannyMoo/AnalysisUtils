@@ -69,7 +69,7 @@ def make_mva_tree(inputtree, weightsfile, weightsvar, outputtree, outputfile, ma
     outputtree.Write()
     outputfile.Close()    
 
-def add_mva_friend(datalib, dataname, weightsfile, weightsvar, outputname, perfile = True, overwrite = False):
+def add_mva_friend(datalib, dataname, weightsfile, weightsvar, outputname, perfile = False, overwrite = False):
     '''Add a friend TTree for the given dataset with the values of the given MVA. 'outputname' will
     be used as the output file name and the branch name. If perfile = True, one file will be written
     per input file. If overwrite = False, files with existing friends will be skipped.'''
