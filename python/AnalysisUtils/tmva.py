@@ -448,6 +448,7 @@ class TMVAClassifier(object) :
     def launch_gui(self) :
         '''Launch the TMVA GUI.'''
 
+        self.cd_weightsdir()
         return TMVA.TMVAGui(self.outputfile)
     
 class KFoldClassifier(object) :
