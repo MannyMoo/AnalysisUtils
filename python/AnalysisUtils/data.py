@@ -86,6 +86,8 @@ class DataLibrary(object) :
             info = self.datapaths[name]
             if not isinstance(info, dict) :
                 info = {'tree' : info[0], 'files' : info[1:]}
+            if info.get('sortfiles', True):
+                info['files'].sort()
             return info
         except KeyError :
             raise ValueError('Unknown data type: ' + repr(name))
