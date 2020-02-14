@@ -76,15 +76,17 @@ def add_mva_friend(datalib, dataname, weightsfile, weightsvar, outputname, perfi
 
     if perfile:
         datainfo = datalib.get_data_info(dataname)
+        zfill = len(str(len(datainfo['files'])))
         def trees():
             for i in xrange(len(datainfo['files'])):
                 yield datalib.get_data(dataname, i, ignorefriends = [outputname])
     else:
+        zfill = 1
         def trees():
             yield datalib.get_data(dataname, ignorefriends = [outputname])
     
     for i, tree in enumerate(trees()):
-        fout = datalib.friend_file_name(dataname, outputname, outputname + '_tree', i, True)
+        fout = datalib.friend_file_name(dataname, outputname, outputname + '_tree', i, True, zfill = zfill)
         if not overwrite and os.path.exists(fout) and is_tfile_ok(fout):
             continue
         make_mva_tree(tree, weightsfile, weightsvar, outputname + '_tree', fout, branchname = outputname)

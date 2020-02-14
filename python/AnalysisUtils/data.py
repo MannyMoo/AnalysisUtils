@@ -191,12 +191,12 @@ class DataLibrary(object) :
         '''Get the directory containing friends of this dataset that will be automatically loaded.'''
         return os.path.join(self.dataset_dir(dataname), dataname + '_Friends')
 
-    def friend_file_name(self, dataname, friendname, treename, number = None, makedir = False) :
+    def friend_file_name(self, dataname, friendname, treename, number = None, makedir = False, zfill = 4) :
         '''Get the name of a file that will be automatically added as a friend to the given dataset,
         optionally with a number. 'treename' is the name of the TTree it's expected to contain.
         If makedir = True then the directory to hold the file is created.'''
         if None != number :
-            fname = treename + '_' + str(number) + '.root'
+            fname = treename + '_' + str(number).zfill(zfill) + '.root'
         else :
             fname = treename + '.root'
         dirname = os.path.join(self.friends_directory(dataname), friendname)
