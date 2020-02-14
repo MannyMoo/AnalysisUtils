@@ -49,6 +49,14 @@ class DataLibrary(object) :
     class DataChain(ROOT.TChain):
         '''Wrapper for TChain to make sure that its file gets closed when it's deleted.'''
         
+        def Show(self, n):
+            '''Show the contents of entry n, also for friend trees.'''
+            super(DataLibrary.DataChain, self).Show(n)
+            if not self.GetListOfFriends():
+                return
+            for info in self.GetListOfFriends():
+                info.GetTree().Show(n)
+
         def __del__(self):
             if self.GetFile():
                 self.GetFile().Close()
@@ -99,14 +107,20 @@ class DataLibrary(object) :
         except KeyError :
             raise ValueError('Unknown data type: ' + repr(name))
 
-    def add_friends(self, name) :
+    def add_friends(self, name, ignorefriends = []) :
         '''Add friends of the given dataset from the files under its friends directory.'''
         info = self._get_data_info(name)
         friendsdir = self.friends_directory(name)
         if not os.path.exists(friendsdir) :
             return
         friends = info.get('friends', [])
+        ignorefriends = list(ignorefriends)
+        for i, _name in enumerate(ignorefriends):
+            if not _name.startswith(name):
+                ignorefriends[i] = name + '_' + _name
         for friendname in os.listdir(friendsdir) :
+            if name + '_' + friendname in ignorefriends:
+                continue
             files = sorted(glob.glob(os.path.join(friendsdir, friendname, '*.root')))
             if not files :
                 continue
@@ -126,16 +140,16 @@ class DataLibrary(object) :
             info['friends'] = friends
             self.datapaths[name] = info
 
-    def get_data_info(self, name) :
+    def get_data_info(self, name, ignorefriends = []) :
         '''Get the info dict on the dataset of the given name.'''
-        self.add_friends(name)
+        self.add_friends(name, ignorefriends = ignorefriends)
         info = self._get_data_info(name)
         return info
 
     def get_data(self, name, ifile = None, iend = None, addfriends = True, ignorefriends = []) :
         '''Get the dataset of the given name. Optionally for one (ifile) or a range (ifile:iend) of files.
         If addfriends = False, friend trees aren't added.'''
-        info = self.get_data_info(name)
+        info = self.get_data_info(name, ignorefriends = ignorefriends)
         files = info['files']
         if None != ifile:
             if None == iend:
@@ -152,6 +166,7 @@ class DataLibrary(object) :
             t.selection = info['selection']
         for varname, varinfo in self._variables(t).items() :
             t.SetAlias(varname, varinfo['formula'])
+        ignorefriends = list(ignorefriends)
         for i, _name in enumerate(ignorefriends):
             if not _name.startswith(name):
                 ignorefriends[i] = name + '_' + _name
