@@ -46,6 +46,13 @@ class DataLibrary(object) :
         def __call__(self) :
             return self.method(*self.args)
 
+    class DataChain(ROOT.TChain):
+        '''Wrapper for TChain to make sure that its file gets closed when it's deleted.'''
+        
+        def __del__(self):
+            if self.GetFile():
+                self.GetFile().Close()
+
     def __init__(self, datapaths, variables, ignorecompilefails = False, selection = '', varnames = ()) :
         self.datapaths = {}
         self.variables = variables
@@ -134,9 +141,10 @@ class DataLibrary(object) :
             if None == iend:
                 iend = ifile+1
             files = files[ifile:iend]
-        t = make_chain(info['tree'], *files)
+        t = make_chain(info['tree'], *files, Class = DataLibrary.DataChain)
         aliases = info.get('aliases', {})
-        set_prefix_aliases(t, aliases)
+        if t.GetListOfBranches():
+            set_prefix_aliases(t, aliases)
         if 'variables' in info :
             t.variables = dict(self.variables)
             t.variables.update(info['variables'])
