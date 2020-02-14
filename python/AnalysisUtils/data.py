@@ -132,7 +132,7 @@ class DataLibrary(object) :
         info = self._get_data_info(name)
         return info
 
-    def get_data(self, name, ifile = None, iend = None, addfriends = True) :
+    def get_data(self, name, ifile = None, iend = None, addfriends = True, ignorefriends = []) :
         '''Get the dataset of the given name. Optionally for one (ifile) or a range (ifile:iend) of files.
         If addfriends = False, friend trees aren't added.'''
         info = self.get_data_info(name)
@@ -152,8 +152,13 @@ class DataLibrary(object) :
             t.selection = info['selection']
         for varname, varinfo in self._variables(t).items() :
             t.SetAlias(varname, varinfo['formula'])
+        for i, _name in enumerate(ignorefriends):
+            if not _name.startswith(name):
+                ignorefriends[i] = name + '_' + _name
         if addfriends and 'friends' in info :
             for friend in info['friends'] :
+                if friend in ignorefriends:
+                    continue
                 if ifile != None :
                     if len(self.get_data_info(friend)['files']) == len(info['files']):
                         t.AddFriend(self.get_data(friend, ifile, iend))
