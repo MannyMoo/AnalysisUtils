@@ -58,7 +58,10 @@ class DataLibrary(object) :
                 info.GetTree().Show(n)
 
         def __del__(self):
+            '''Closes the TChain's file.'''
+            #print 'Del', self.name
             if self.GetFile():
+                #print 'Close file', self.GetFile().GetName()
                 self.GetFile().Close()
 
     def __init__(self, datapaths, variables, ignorecompilefails = False, selection = '', varnames = ()) :
@@ -156,6 +159,11 @@ class DataLibrary(object) :
                 iend = ifile+1
             files = files[ifile:iend]
         t = make_chain(info['tree'], *files, Class = DataLibrary.DataChain)
+        t.name = name
+        if ifile != None:
+            t.name += '_' + str(ifile)
+        if iend != None:
+            t.name += '_' + str(iend)
         aliases = info.get('aliases', {})
         if t.GetListOfBranches():
             set_prefix_aliases(t, aliases)
@@ -176,17 +184,24 @@ class DataLibrary(object) :
                     continue
                 if ifile != None :
                     if len(self.get_data_info(friend)['files']) == len(info['files']):
-                        t.AddFriend(self.get_data(friend, ifile, iend))
+                        friendtree = self.get_data(friend, ifile, iend)
                     else:
                         print 'Warning: skipping friend', friend, 'of', name, 'due to different n. files'
+                        continue
                 else:
-                    t.AddFriend(self.get_data(friend))
+                    friendtree = self.get_data(friend)
+                t.AddFriend(friendtree)
+                # Have to keep a reference to the friend tree in python, otherwise it doesn't get cleaned up.
+                t.friends = getattr(t, 'friends', []) + [friendtree]
         return t
 
-    # def get_data_frame(self, name):
-    #     '''Get a TDataFrame for the given dataset.'''
-    #     tree = self.get_data(name)
-    #     return ROOT.Experimental.TDataFrame(tree)
+    def get_data_frame(self, name, *args, **kwargs):
+        '''Get a RDataFrame for the given dataset. Can take any of the arguments to DataLibrary.get_data.'''
+        tree = self.get_data(name, *args, **kwargs)
+        df = ROOT.RDataFrame(tree)
+        # Keep a reference to the TChain in python so it's cleaned up.
+        df.tree = tree
+        return df
 
     def dataset_dir(self, dataname):
         '''Get the directory where RooDataSets etc will be saved for this dataset.'''
