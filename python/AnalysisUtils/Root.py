@@ -1,9 +1,15 @@
-import ROOT, os, stat
+'''ROOT hacks.'''
+
+import ROOT, os, stat, string, random
+
+def random_string(n = 6, chars = string.ascii_uppercase + string.ascii_lowercase) :
+    '''Generate a random string of length n.'''
+    return ''.join(random.choice(chars) for _ in xrange(n))
 
 def getperm(fname):
     '''Get default permissions for a file created in the same directory as the given file name.'''
     try:
-        fperm = os.path.join(os.path.dirname(fname), '___getperm___')
+        fperm = os.path.join(os.path.dirname(fname), '___getperm_' + random_string() + '___')
         with open(fperm, 'w') as f:
             pass
         perms = stat.S_IMODE(os.lstat(fperm).st_mode)
