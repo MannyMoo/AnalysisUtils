@@ -9,7 +9,15 @@ find_package(PythonLibs)
 find_package(Boost COMPONENTS program_options REQUIRED)
 find_package(ROOT COMPONENTS Core RIO Hist Graf Graf3d Postscript Gpad
                              RooFit RooFitCore Tree MathCore Foam Physics
-                             Proof ProofBench ProofDraw ProofPlayer)
+                             Proof ProofBench ProofDraw ProofPlayer
+			     ROOTDataFrame)
+
+# Runtime dependency of libROOTDataFrame.so
+find_library(Davix_LIB NAMES davix)
+if(Davix_LIB)
+  get_filename_component(Davix_LIB_DIR "${Davix_LIB}" DIRECTORY)
+  gaudi_env(PREPEND LD_LIBRARY_PATH "${Davix_LIB_DIR}")
+endif()
 
 # override the genreflex call to wrap it in the right environment
 # set(ROOT_genreflex_CMD ${env_cmd} --xml ${env_xml} ${ROOT_genreflex_CMD})

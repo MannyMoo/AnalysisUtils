@@ -18,20 +18,10 @@ def is_tfile_ok(tfile) :
         tfile.Close()
     return ok
 
-def Show(self, n):
-    '''Show the contents of entry n, also for friend trees.'''
-    self._Show(n)
-    if not self.GetListOfFriends():
-        return
-    for info in self.GetListOfFriends():
-        info.GetTree().Show(n)
-
-ROOT.TChain._Show = ROOT.TChain.Show
-ROOT.TChain.Show = Show
-
-def make_chain(treename, *fnames) :
+def make_chain(treename, *fnames, **kwargs) :
     '''Make a TChain from a tree name and a list of file names.'''
-    chain = ROOT.TChain(treename)
+    Chain = kwargs.get('Class', ROOT.TChain)
+    chain = Chain(treename)
     for fname in fnames :
         chain.Add(fname)
     return chain
