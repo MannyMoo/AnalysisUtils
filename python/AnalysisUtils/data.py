@@ -258,6 +258,9 @@ class DataLibrary(object) :
             checkvarnames = varnames
         checkvarnames = set(checkvarnames)
         dataset = fout.Get(dataname)
+        if not dataset or dataset.numEntries() == 0 or dataset.get(0).size() == 0:
+            fout.Close()
+            return
         datanames = set(dataset.get(0).contentsString().split(','))
         if dataset and checkvarnames == datanames :
             fout.Close()
