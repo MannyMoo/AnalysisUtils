@@ -189,10 +189,10 @@ class DataLibrary(object) :
             os.makedirs(dirname)
         return os.path.join(dirname, fname)
 
-    def selected_file_name(self, dataname) :
+    def selected_file_name(self, dataname, makedir = False) :
         '''Get the name of the file containing the TTree of range and selection
         variables created when making the RooDataSet.'''
-        return os.path.join(self.friends_directory(dataname), 'SelectedTree', 'SelectedTree.root')
+        return self.friend_file_name(dataname, 'SelectedTree', 'SelectedTree', makedir = makedir)
 
     def retrieve_dataset(self, dataname, varnames) :
         '''Retrieve a previously saved RooDataSet for the given dataset and check that it contains
@@ -237,10 +237,7 @@ class DataLibrary(object) :
 
         tree = self.get_data(dataname)
         variables = self._variables(tree)
-        selectedtreefile = self.selected_file_name(dataname)
-        selectedtreedir = os.path.dirname(selectedtreefile)
-        if not os.path.exists(selectedtreedir) :
-            os.makedirs(selectedtreedir)
+        selectedtreefile = self.selected_file_name(dataname, True)
         dataset = make_roodataset(dataname, dataname, tree,
                                   ignorecompilefails = self.ignorecompilefails,
                                   selection = self._selection(tree),
