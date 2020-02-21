@@ -89,6 +89,14 @@ clear=True)
     with open(fout, 'w') as f :
         f.write(lines)
 
+def get_bk_stats(path):
+    '''Get the stats for the given bk path.'''
+    stats = dirac_call('dirac-bookkeeping-get-stats', '-B', path)
+    for line in filter(None, stats['stdout'].splitlines()[1:]):
+        splitline = line.split(':')
+        stats[splitline[0].strip()] = splitline[1].strip().replace("'", '')
+    return stats
+    
 def get_lfns(*args, **kwargs) :
     '''Get the LFNs from the given BK query. If the keyword arg 'outputfile' is given,
     the LFNs are saved as an LHCb dataset to that file. If the 'stats' keyword arg is given
