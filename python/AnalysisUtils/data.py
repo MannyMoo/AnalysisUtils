@@ -1,7 +1,7 @@
 '''Functions to access all the relevant datasets for the analysis, both TTrees and RooDataSets.'''
 
 from AnalysisUtils.RooFit import RooFit
-import os, ROOT, pprint, cppyy, glob, re, multiprocessing
+import os, ROOT, pprint, cppyy, glob, re, multiprocessing, datetime
 from AnalysisUtils.makeroodataset import make_roodataset, make_roodatahist
 from AnalysisUtils.treeutils import make_chain, set_prefix_aliases, check_formula_compiles, is_tfile_ok, copy_tree
 from array import array
@@ -352,6 +352,13 @@ class DataLibrary(object) :
         for dataset in datasets[1:]:
             data.append(self.get_dataset(dataset, **kwargs))
         return data
+
+    def get_dataset_update_time(self, name, suffix = ''):
+        '''Get the time that the RooDataset was last updated.'''
+        fname = self.dataset_file_name(name, suffix)
+        if not os.path.exists(fname):
+            return
+        return datetime.datetime.fromtimestamp(os.path.getmtime(fname))
 
     def check_dataset(self, name) :
         '''Check that all files exist, are unique, contain the required TTree, and all the TTrees have 
