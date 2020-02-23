@@ -212,10 +212,10 @@ class DataLibrary(object) :
             dirname = os.path.dirname(info['files'][0])
         return dirname
 
-    def dataset_file_name(self, dataname) :
+    def dataset_file_name(self, dataname, suffix = '') :
         '''Get the name of the file containing the RooDataset corresponding to the given
         dataset name.'''
-        return os.path.join(self.dataset_dir(dataname), dataname + '_Dataset.root')
+        return os.path.join(self.dataset_dir(dataname), dataname + suffix + '_Dataset.root')
 
     def friends_directory(self, dataname) :
         '''Get the directory containing friends of this dataset that will be automatically loaded.'''
@@ -234,20 +234,25 @@ class DataLibrary(object) :
             os.makedirs(dirname)
         return os.path.join(dirname, fname)
 
-    def selected_file_name(self, dataname, makedir = False) :
+    def selected_file_name(self, dataname, makedir = False, suffix = '') :
         '''Get the name of the file containing the TTree of range and selection
         variables created when making the RooDataSet.'''
         return self.friend_file_name(dataname, 'SelectedTree', 'SelectedTree', makedir = makedir)
 
-    def retrieve_dataset(self, dataname, varnames) :
+    def retrieve_dataset(self, dataname, varnames, suffix = '', selection = '') :
         '''Retrieve a previously saved RooDataSet for the given dataset and check that it contains
         variables with the given names. If the file or RooDataSet doesn't exist, or the RooDataSet
         contains different variables, returns None.'''
 
         tree = self.get_data(dataname)
 
-        fout = ROOT.TFile.Open(self.dataset_file_name(dataname))
+        fout = ROOT.TFile.Open(self.dataset_file_name(dataname, suffix))
         if not fout or fout.IsZombie():
+            return
+        # selection wasn't always recorded to the file, so for backwards compatibility,
+        # check if it's there first.
+        if fout.Get('selection') and fout.Get('selection').GetTitle() != selection:
+            fout.Close()
             return
         if self.ignorecompilefails :
             variables = self._variables(tree)
@@ -257,7 +262,7 @@ class DataLibrary(object) :
         else :
             checkvarnames = varnames
         checkvarnames = set(checkvarnames)
-        dataset = fout.Get(dataname)
+        dataset = fout.Get(dataname + suffix)
         if not dataset or dataset.numEntries() == 0 or dataset.get(0).size() == 0:
             fout.Close()
             return
@@ -268,35 +273,40 @@ class DataLibrary(object) :
         print 'Variables for dataset', dataname, 'have changed. Expected', checkvarnames, 'found', datanames, '. RooDataSet will be updated.'
         fout.Close()
 
-    def get_dataset(self, dataname, varnames = None, update = False) :
+    def get_dataset(self, dataname, varnames = None, update = False, suffix = '', selection = '') :
         '''Get the RooDataSet of the given name. It's created/updated on demand. varnames is the 
         set of variables to be included in the RooDataSet. They must correspond to those defined 
         in the variables module. If the list of varnames changes or if update = True the 
         RooDataSet will be recreated.'''
 
+        tree = self.get_data(dataname)
+        variables = self._variables(tree)
+        if not selection:
+            selection = self._selection(tree)
+
         if not varnames :
             varnames = self.varnames
         if not update :
-            dataset = self.retrieve_dataset(dataname, varnames)
+            dataset = self.retrieve_dataset(dataname, varnames, suffix, selection)
             if dataset:
                 return dataset
 
         print 'Making RooDataSet for', dataname
 
-        tree = self.get_data(dataname)
-        variables = self._variables(tree)
-        selectedtreefile = self.selected_file_name(dataname, True)
-        dataset = make_roodataset(dataname, dataname, tree,
+        selectedtreefile = self.selected_file_name(dataname, True, suffix)
+        datasetname = dataname + suffix
+        dataset = make_roodataset(datasetname, datasetname, tree,
                                   ignorecompilefails = self.ignorecompilefails,
-                                  selection = self._selection(tree),
+                                  selection = selection,
                                   selectedtreefile = selectedtreefile,
                                   selectedtreename = 'SelectedTree',
                                   **dict((var, variables[var]) for var in varnames))
 
-        fname = self.dataset_file_name(dataname)
+        fname = self.dataset_file_name(dataname, suffix)
         print 'Saving to', fname
         fout = ROOT.TFile.Open(fname, 'recreate')
         dataset.Write()
+        ROOT.TNamed('selection', selection).Write()
         fout.Close()
         return dataset
 
