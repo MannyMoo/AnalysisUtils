@@ -244,7 +244,7 @@ class DataLibrary(object) :
         variables with the given names. If the file or RooDataSet doesn't exist, or the RooDataSet
         contains different variables, returns None.'''
 
-        tree = self.get_data(dataname)
+        tree = self.get_data(dataname, ignorefriends = ['SelectedTree' + suffix])
 
         fout = ROOT.TFile.Open(self.dataset_file_name(dataname, suffix))
         if not fout or fout.IsZombie():
