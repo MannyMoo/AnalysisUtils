@@ -238,14 +238,14 @@ class DataLibrary(object) :
     def selected_file_name(self, dataname, makedir = False, suffix = '') :
         '''Get the name of the file containing the TTree of range and selection
         variables created when making the RooDataSet.'''
-        return self.friend_file_name(dataname, 'SelectedTree', 'SelectedTree', makedir = makedir)
+        return self.friend_file_name(dataname, 'SelectedTree' + suffix, 'SelectedTree' + suffix, makedir = makedir)
 
     def retrieve_dataset(self, dataname, varnames, suffix = '', selection = '') :
         '''Retrieve a previously saved RooDataSet for the given dataset and check that it contains
         variables with the given names. If the file or RooDataSet doesn't exist, or the RooDataSet
         contains different variables, returns None.'''
 
-        tree = self.get_data(dataname)
+        tree = self.get_data(dataname, ignorefriends = ['SelectedTree' + suffix])
 
         fout = ROOT.TFile.Open(self.dataset_file_name(dataname, suffix))
         if not fout or fout.IsZombie():
@@ -274,15 +274,15 @@ class DataLibrary(object) :
         print 'Variables for dataset', dataname, 'have changed. Expected', checkvarnames, 'found', datanames, '. RooDataSet will be updated.'
         fout.Close()
 
-    def get_dataset(self, dataname, varnames = None, update = False, suffix = '', selection = '') :
+    def get_dataset(self, dataname, varnames = None, update = False, suffix = '', selection = None) :
         '''Get the RooDataSet of the given name. It's created/updated on demand. varnames is the 
         set of variables to be included in the RooDataSet. They must correspond to those defined 
         in the variables module. If the list of varnames changes or if update = True the 
         RooDataSet will be recreated.'''
 
-        tree = self.get_data(dataname)
+        tree = self.get_data(dataname, ignorefriends = ['SelectedTree' + suffix])
         variables = self._variables(tree)
-        if not selection:
+        if None == selection:
             selection = self._selection(tree)
 
         if not varnames :
@@ -300,7 +300,7 @@ class DataLibrary(object) :
                                   ignorecompilefails = self.ignorecompilefails,
                                   selection = selection,
                                   selectedtreefile = selectedtreefile,
-                                  selectedtreename = 'SelectedTree',
+                                  selectedtreename = 'SelectedTree' + suffix,
                                   **dict((var, variables[var]) for var in varnames))
 
         fname = self.dataset_file_name(dataname, suffix)
