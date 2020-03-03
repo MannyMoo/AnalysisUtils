@@ -130,9 +130,10 @@ class DataLibrary(object) :
             fname = os.path.split(files[0])[1]
             # Take the name of the file as the name of the TTree
             treename = fname[:-len('.root')]
-            # Check if the file ends with _[0-9]+, in which case remove it.
-            if re.search('_[0-9]+\.root', fname) :
-                treename = '_'.join(treename.split('_')[:-1])
+            # Check if the file ends with __[0-9]+__, in which case remove it.
+            search = re.search('__[0-9]+\__.root', fname)
+            if search and search.end() == len(fname) :
+                treename = treename[:search.start()]
             friendname = name + '_' + friendname
             if not friendname in self.datapaths :
                 self.make_getters({friendname : {'files' : files,
@@ -226,7 +227,7 @@ class DataLibrary(object) :
         optionally with a number. 'treename' is the name of the TTree it's expected to contain.
         If makedir = True then the directory to hold the file is created.'''
         if None != number :
-            fname = treename + '_' + str(number).zfill(zfill) + '.root'
+            fname = treename + '__' + str(number).zfill(zfill) + '__.root'
         else :
             fname = treename + '.root'
         dirname = os.path.join(self.friends_directory(dataname), friendname)
