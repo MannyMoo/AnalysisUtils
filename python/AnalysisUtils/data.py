@@ -22,12 +22,11 @@ def _is_ok(tree, fout, selection):
     return True
 
 def _parallel_filter(datalib, dataset, ifile, selection, outputdir, outputname, nthreads,
-                     zfill, overwrite):
+                     zfill, overwrite, ignorefriends):
     '''Filter a single file from a TChain.'''
     fout = os.path.join(outputdir, outputname + '_{0}.root')
     fout = fout.format(str(ifile).zfill(zfill))
-    tree = datalib.get_data(dataset, ifile)
-    info = datalib.get_data_info(dataset)
+    tree = datalib.get_data(dataset, ifile, ignorefriends = ignorefriends)
     if not overwrite and _is_ok(tree, fout, selection):
         return True
     cptree = copy_tree(tree = tree, selection = selection,
@@ -475,7 +474,7 @@ class DataLibrary(object) :
         return h
 
     def parallel_filter_data(self, dataset, selection, outputdir, outputname,
-                             nthreads = multiprocessing.cpu_count(), zfill = 3, overwrite = True):
+                             nthreads = multiprocessing.cpu_count(), zfill = None, overwrite = True, ignorefriends = []):
         '''Filter a dataset with the given selection and save output to the outputdir/outputname/.'''
         outputdir = os.path.join(outputdir, outputname)
         if not os.path.exists(outputdir):
@@ -483,14 +482,16 @@ class DataLibrary(object) :
 
         # Do each file individually in parallel.
         pool = Pool(processes = nthreads)
-        info = self.get_data_info(dataset)
+        info = self.get_data_info(dataset, ignorefriends = ignorefriends)
         nfiles = len(info['files'])
+        if None == zfill:
+            zfill = len(str(nfiles))
         procs = []
         for i in xrange(nfiles):
             kwargs = dict(datalib = self, dataset = dataset, selection = selection,
                           outputdir = outputdir, outputname = outputname, 
                           nthreads = nthreads, zfill = zfill, ifile = i,
-                          overwrite = overwrite)
+                          overwrite = overwrite, ignorefriends = ignorefriends)
             proc = pool.apply_async(_parallel_filter, 
                                     kwds = kwargs)
             procs.append(proc)
