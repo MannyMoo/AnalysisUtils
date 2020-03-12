@@ -383,8 +383,6 @@ def tree_iter(tree, formula, selection = None) :
     '''Iterator over a TTree, returning the formula value, optionally only for 
     entries satisfying the selection.'''
     form = make_treeformula('val', formula, tree, 9)
-    else:
-        form = formula
     for i in tree_loop(tree, selection) :
         yield form()
 

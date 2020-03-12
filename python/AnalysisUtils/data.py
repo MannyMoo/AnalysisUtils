@@ -1,9 +1,10 @@
 '''Functions to access all the relevant datasets for the analysis, both TTrees and RooDataSets.'''
 
 from AnalysisUtils.RooFit import RooFit
-import os, ROOT, pprint, cppyy, glob, re, multiprocessing, datetime
+import os, ROOT, pprint, cppyy, glob, re, multiprocessing, datetime, sys
 from AnalysisUtils.makeroodataset import make_roodataset, make_roodatahist
-from AnalysisUtils.treeutils import make_chain, set_prefix_aliases, check_formula_compiles, is_tfile_ok, copy_tree
+from AnalysisUtils.treeutils import make_chain, set_prefix_aliases, check_formula_compiles, is_tfile_ok, copy_tree,\
+    TreeBranchAdder, tree_loop
 from array import array
 from copy import deepcopy
 from multiprocessing import Pool
@@ -160,6 +161,12 @@ class DataLibrary(object) :
             files = files[ifile:iend]
         t = make_chain(info['tree'], *files, Class = DataLibrary.DataChain)
         t.name = name
+        # Load the first entry to check that the TChain is OK.
+        loadresult = t.LoadTree(0)
+        if loadresult < 0:
+            print >> sys.stderr, 'ERROR: datalib.get_data: dataset', name, 'is a zombie! (error {0})'\
+                        .format(loadresult)
+            return None
         if ifile != None:
             t.name += '_' + str(ifile)
         if iend != None:
@@ -190,6 +197,8 @@ class DataLibrary(object) :
                         continue
                 else:
                     friendtree = self.get_data(friend)
+                if not friendtree:
+                    continue
                 t.AddFriend(friendtree)
                 # Have to keep a reference to the friend tree in python, otherwise it doesn't get cleaned up.
                 t.friends = getattr(t, 'friends', []) + [friendtree]
@@ -233,6 +242,29 @@ class DataLibrary(object) :
         if makedir and not os.path.exists(dirname) :
             os.makedirs(dirname)
         return os.path.join(dirname, fname)
+
+    def add_friend_tree(self, dataname, friendname, adderkwargs, 
+                        tree = None, treename = None, perfile = False, makedir = True, zfill = 4):
+        '''Add a friend tree to the given dataset.
+        friendname = name of the friend dataset
+        adderkwargs = list of dicts to be passed as arguments to TreeBranchAdder instances (excluding
+          the tree argument)
+        treename = name of the friend TTree (default friendname + 'Tree')
+        makedir & zfill are passed to frield_file_name.'''
+        if None == treename:
+            treename = friendname + 'Tree'
+        fout = ROOT.TFile.Open(self.friend_file_name(dataname, friendname, treename,
+                                                     makedir = makedir, zfill = zfill), 'recreate')
+        treeout = ROOT.TTree(treename, treename)
+        adders = [TreeBranchAdder(treeout, **kwargs) for kwargs in adderkwargs]
+        if None == tree:
+            tree = self.get_data(dataname)
+        for i in tree_loop(tree):
+            for adder in adders:
+                adder.set_value()
+            treeout.Fill()
+        treeout.Write()
+        fout.Close()
 
     def selected_file_name(self, dataname, makedir = False, suffix = '') :
         '''Get the name of the file containing the TTree of range and selection
