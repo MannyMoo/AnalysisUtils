@@ -324,7 +324,7 @@ class TMVAClassifier(object) :
     @staticmethod
     def default_method_options(method, *args, **kwargs) :
         '''Get the default options for the given method, optionally updating them with the given args.'''
-        return TMVAOptions.defaultopts[method].copy(*args, **kwargs)
+        return TMVAClassifier.defaultopts[method].copy(*args, **kwargs)
 
     def get_method_args(self) :
         '''Get the method arguments.'''
@@ -448,6 +448,7 @@ class TMVAClassifier(object) :
     def launch_gui(self) :
         '''Launch the TMVA GUI.'''
 
+        self.cd_weightsdir()
         return TMVA.TMVAGui(self.outputfile)
     
 class KFoldClassifier(object) :

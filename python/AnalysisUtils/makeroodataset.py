@@ -90,6 +90,9 @@ def make_roodataset(dataname, datatitle, tree, nentries = -1, selection = '',
         for treevar in skippedvars :
             print treevar
 
+    if not treevars:
+        raise Exception('There were no variables that compiled successfully!')
+
     if selection :
         print 'Applying selection', repr(selection)
         selvar = TreeFormula('selection', selection, tree)

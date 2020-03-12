@@ -1,8 +1,9 @@
 from xml.etree import ElementTree
 from argparse import ArgumentParser
-import ROOT, os
+import ROOT, os, multiprocessing
 from array import array
 from AnalysisUtils.treeutils import TreeFormula, is_tfile_ok
+from multiprocessing import Pool
 
 class MVACalc(object) :
     '''Class to calculate MVA variables from an xml file output by TMVA.'''
@@ -71,27 +72,51 @@ def make_mva_tree(inputtree, weightsfile, weightsvar, outputtree, outputfile, ma
         mvavar[0] = mvacalc.calc_mva(i)
         outputtree.Fill()
     outputtree.Write()
-    outputfile.Close()    
+    outputfile.Close()
 
-def add_mva_friend(datalib, dataname, weightsfile, weightsvar, outputname, perfile = True, overwrite = False):
+def _parallel_add_mva_friend(datalib, treeinfo, weightsfile, weightsvar, outputname, fout):
+    '''Function for parallel building of MVA trees.'''
+    tree = datalib.get_data(**treeinfo)
+    return make_mva_tree(tree, weightsfile, weightsvar, outputname + '_tree', fout, branchname = outputname)
+
+def add_mva_friend(datalib, dataname, weightsfile, weightsvar, outputname, perfile = False, overwrite = False,
+                   nthreads = multiprocessing.cpu_count(), ignorefriends = []):
     '''Add a friend TTree for the given dataset with the values of the given MVA. 'outputname' will
     be used as the output file name and the branch name. If perfile = True, one file will be written
-    per input file. If overwrite = False, files with existing friends will be skipped.'''
+    per input file, if nthreads > 1 as well then this will be done in parallel. If overwrite = False,
+    files with existing friends will be skipped.'''
 
     if perfile:
         datainfo = datalib.get_data_info(dataname)
+        zfill = len(str(len(datainfo['files'])))
         def trees():
             for i in xrange(len(datainfo['files'])):
-                yield datalib.get_data(dataname, i)
+                yield i, dict(name = dataname, ifile = i, ignorefriends = [outputname] + ignorefriends)
     else:
+        zfill = 1
         def trees():
-            yield datalib.get_data(dataname)
+            yield None, dict(name = dataname, ignorefriends = [outputname] + ignorefriends)
     
-    for i, tree in enumerate(trees()):
-        fout = datalib.friend_file_name(dataname, outputname, outputname + '_tree', i, True)
+    pool = Pool(processes = nthreads)
+    procs = []
+    for i, treeinfo in trees():
+        fout = datalib.friend_file_name(dataname, outputname, outputname + '_tree', i, True, zfill = zfill)
         if not overwrite and os.path.exists(fout) and is_tfile_ok(fout):
             continue
-        make_mva_tree(tree, weightsfile, weightsvar, outputname + '_tree', outputname, branchname = outputname)
+        kwargs = dict(datalib = datalib, treeinfo = treeinfo, weightsfile = weightsfile, weightsvar = weightsvar,
+                      outputname = outputname, fout = fout)
+        #apply(_parallel_add_mva_friend, (), kwargs)
+        proc = pool.apply_async(_parallel_add_mva_friend, kwds = kwargs)
+        procs.append(proc)
+
+    success = True
+    for i, proc in enumerate(procs):
+        proc.wait()
+        procsuccess = proc.successful()
+        if not procsuccess:
+            proc.get()
+        success = success and procsuccess
+    return success
 
 def main() :
     ROOT.gROOT.SetBatch(True)

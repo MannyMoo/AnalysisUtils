@@ -20,13 +20,13 @@ def dirac_call(*args, **kwargs) :
 
     cmd = '''. {0} >& /dev/null
 lb-run -c best LHCbDirac/prod {1}'''.format(lblogin,
-                                            ' '.join(repr(arg) for arg in args))
+                                            ' '.join('"' + str(arg) + '"' for arg in args))
 
     proc = subprocess.Popen(('bash', '-c', cmd), env = env, stdout = subprocess.PIPE,
                             stderr = subprocess.PIPE)
     stdout, stderr = proc.communicate()
-    stdout = stdout.decode(sys.stdout.encoding)
-    stderr = stderr.decode(sys.stdout.encoding)
+    stdout = str(stdout.decode(sys.stdout.encoding))
+    stderr = str(stderr.decode(sys.stdout.encoding))
     exitcode = proc.poll()
     returnval = {'stdout' : stdout, 'stderr' : stderr, 'exitcode' : exitcode}
     if 0 != exitcode and kwargs.get('raiseonfailure', True) :
@@ -89,6 +89,14 @@ clear=True)
     with open(fout, 'w') as f :
         f.write(lines)
 
+def get_bk_stats(path):
+    '''Get the stats for the given bk path.'''
+    stats = dirac_call('dirac-bookkeeping-get-stats', '-B', path)
+    for line in filter(None, stats['stdout'].splitlines()[1:]):
+        splitline = line.split(':')
+        stats[splitline[0].strip()] = splitline[1].strip().replace("'", '')
+    return stats
+    
 def get_lfns(*args, **kwargs) :
     '''Get the LFNs from the given BK query. If the keyword arg 'outputfile' is given,
     the LFNs are saved as an LHCb dataset to that file. If the 'stats' keyword arg is given
@@ -187,7 +195,7 @@ def extract_lfns(lfnsfile, nfiles = 0, raiseexecpt = True) :
     istart = contents.index('[', istart)
     iend = contents.index(']', istart)
     lfns = eval(contents[istart:iend+1])
-    lfns = [lfn.replace('LFN:', '') for lfn in lfns]
+    lfns = [str(lfn.replace('LFN:', '')) for lfn in lfns]
     if nfiles :
         lfns = lfns[:nfiles]
 
@@ -272,6 +280,14 @@ def prod_for_path(path) :
         except ValueError :
             continue
         prods.append((name, prod.split(',')))
+    if not prods:
+        raise Exception('''Failed to get productions for path
+{0}
+stdout:
+{1}
+stderr:
+{2}
+'''.format(path, returnval['stdout'], returnval['stderr']))
     return prods
 
 def production_info(prod) :

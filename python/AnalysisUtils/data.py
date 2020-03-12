@@ -1,7 +1,7 @@
 '''Functions to access all the relevant datasets for the analysis, both TTrees and RooDataSets.'''
 
 from AnalysisUtils.RooFit import RooFit
-import os, ROOT, pprint, cppyy, glob, re, multiprocessing
+import os, ROOT, pprint, cppyy, glob, re, multiprocessing, datetime
 from AnalysisUtils.makeroodataset import make_roodataset, make_roodatahist
 from AnalysisUtils.treeutils import make_chain, set_prefix_aliases, check_formula_compiles, is_tfile_ok, copy_tree
 from array import array
@@ -22,12 +22,11 @@ def _is_ok(tree, fout, selection):
     return True
 
 def _parallel_filter(datalib, dataset, ifile, selection, outputdir, outputname, nthreads,
-                     zfill, overwrite):
+                     zfill, overwrite, ignorefriends):
     '''Filter a single file from a TChain.'''
     fout = os.path.join(outputdir, outputname + '_{0}.root')
     fout = fout.format(str(ifile).zfill(zfill))
-    tree = datalib.get_data(dataset, ifile)
-    info = datalib.get_data_info(dataset)
+    tree = datalib.get_data(dataset, ifile, ignorefriends = ignorefriends)
     if not overwrite and _is_ok(tree, fout, selection):
         return True
     cptree = copy_tree(tree = tree, selection = selection,
@@ -45,6 +44,24 @@ class DataLibrary(object) :
         
         def __call__(self) :
             return self.method(*self.args)
+
+    class DataChain(ROOT.TChain):
+        '''Wrapper for TChain to make sure that its file gets closed when it's deleted.'''
+        
+        def Show(self, n):
+            '''Show the contents of entry n, also for friend trees.'''
+            super(DataLibrary.DataChain, self).Show(n)
+            if not self.GetListOfFriends():
+                return
+            for info in self.GetListOfFriends():
+                info.GetTree().Show(n)
+
+        def __del__(self):
+            '''Closes the TChain's file.'''
+            #print 'Del', self.name
+            if self.GetFile():
+                #print 'Close file', self.GetFile().GetName()
+                self.GetFile().Close()
 
     def __init__(self, datapaths, variables, ignorecompilefails = False, selection = '', varnames = ()) :
         self.datapaths = {}
@@ -86,27 +103,36 @@ class DataLibrary(object) :
             info = self.datapaths[name]
             if not isinstance(info, dict) :
                 info = {'tree' : info[0], 'files' : info[1:]}
+            if info.get('sortfiles', True):
+                info['files'].sort()
             return info
         except KeyError :
             raise ValueError('Unknown data type: ' + repr(name))
 
-    def add_friends(self, name) :
+    def add_friends(self, name, ignorefriends = []) :
         '''Add friends of the given dataset from the files under its friends directory.'''
         info = self._get_data_info(name)
         friendsdir = self.friends_directory(name)
         if not os.path.exists(friendsdir) :
             return
         friends = info.get('friends', [])
+        ignorefriends = list(ignorefriends)
+        for i, _name in enumerate(ignorefriends):
+            if not _name.startswith(name):
+                ignorefriends[i] = name + '_' + _name
         for friendname in os.listdir(friendsdir) :
+            if name + '_' + friendname in ignorefriends:
+                continue
             files = sorted(glob.glob(os.path.join(friendsdir, friendname, '*.root')))
             if not files :
                 continue
             fname = os.path.split(files[0])[1]
             # Take the name of the file as the name of the TTree
             treename = fname[:-len('.root')]
-            # Check if the file ends with _[0-9]+, in which case remove it.
-            if re.search('_[0-9]+\.root', fname) :
-                treename = '_'.join(treename.split('_')[:-1])
+            # Check if the file ends with __[0-9]+__, in which case remove it.
+            search = re.search('__[0-9]+\__.root', fname)
+            if search and search.end() == len(fname) :
+                treename = treename[:search.start()]
             friendname = name + '_' + friendname
             if not friendname in self.datapaths :
                 self.make_getters({friendname : {'files' : files,
@@ -117,24 +143,30 @@ class DataLibrary(object) :
             info['friends'] = friends
             self.datapaths[name] = info
 
-    def get_data_info(self, name) :
+    def get_data_info(self, name, ignorefriends = []) :
         '''Get the info dict on the dataset of the given name.'''
-        self.add_friends(name)
+        self.add_friends(name, ignorefriends = ignorefriends)
         info = self._get_data_info(name)
         return info
 
-    def get_data(self, name, ifile = None, iend = None, addfriends = True) :
+    def get_data(self, name, ifile = None, iend = None, addfriends = True, ignorefriends = []) :
         '''Get the dataset of the given name. Optionally for one (ifile) or a range (ifile:iend) of files.
         If addfriends = False, friend trees aren't added.'''
-        info = self.get_data_info(name)
+        info = self.get_data_info(name, ignorefriends = ignorefriends)
         files = info['files']
         if None != ifile:
             if None == iend:
                 iend = ifile+1
             files = files[ifile:iend]
-        t = make_chain(info['tree'], *files)
+        t = make_chain(info['tree'], *files, Class = DataLibrary.DataChain)
+        t.name = name
+        if ifile != None:
+            t.name += '_' + str(ifile)
+        if iend != None:
+            t.name += '_' + str(iend)
         aliases = info.get('aliases', {})
-        set_prefix_aliases(t, aliases)
+        if t.GetListOfBranches():
+            set_prefix_aliases(t, aliases)
         if 'variables' in info :
             t.variables = dict(self.variables)
             t.variables.update(info['variables'])
@@ -142,21 +174,34 @@ class DataLibrary(object) :
             t.selection = info['selection']
         for varname, varinfo in self._variables(t).items() :
             t.SetAlias(varname, varinfo['formula'])
+        ignorefriends = list(ignorefriends)
+        for i, _name in enumerate(ignorefriends):
+            if not _name.startswith(name):
+                ignorefriends[i] = name + '_' + _name
         if addfriends and 'friends' in info :
             for friend in info['friends'] :
+                if friend in ignorefriends:
+                    continue
                 if ifile != None :
                     if len(self.get_data_info(friend)['files']) == len(info['files']):
-                        t.AddFriend(self.get_data(friend, ifile, iend))
+                        friendtree = self.get_data(friend, ifile, iend)
                     else:
                         print 'Warning: skipping friend', friend, 'of', name, 'due to different n. files'
+                        continue
                 else:
-                    t.AddFriend(self.get_data(friend))
+                    friendtree = self.get_data(friend)
+                t.AddFriend(friendtree)
+                # Have to keep a reference to the friend tree in python, otherwise it doesn't get cleaned up.
+                t.friends = getattr(t, 'friends', []) + [friendtree]
         return t
 
-    # def get_data_frame(self, name):
-    #     '''Get a TDataFrame for the given dataset.'''
-    #     tree = self.get_data(name)
-    #     return ROOT.Experimental.TDataFrame(tree)
+    def get_data_frame(self, name, *args, **kwargs):
+        '''Get a RDataFrame for the given dataset. Can take any of the arguments to DataLibrary.get_data.'''
+        tree = self.get_data(name, *args, **kwargs)
+        df = ROOT.RDataFrame(tree)
+        # Keep a reference to the TChain in python so it's cleaned up.
+        df.tree = tree
+        return df
 
     def dataset_dir(self, dataname):
         '''Get the directory where RooDataSets etc will be saved for this dataset.'''
@@ -167,21 +212,21 @@ class DataLibrary(object) :
             dirname = os.path.dirname(info['files'][0])
         return dirname
 
-    def dataset_file_name(self, dataname) :
+    def dataset_file_name(self, dataname, suffix = '') :
         '''Get the name of the file containing the RooDataset corresponding to the given
         dataset name.'''
-        return os.path.join(self.dataset_dir(dataname), dataname + '_Dataset.root')
+        return os.path.join(self.dataset_dir(dataname), dataname + suffix + '_Dataset.root')
 
     def friends_directory(self, dataname) :
         '''Get the directory containing friends of this dataset that will be automatically loaded.'''
         return os.path.join(self.dataset_dir(dataname), dataname + '_Friends')
 
-    def friend_file_name(self, dataname, friendname, treename, number = None, makedir = False) :
+    def friend_file_name(self, dataname, friendname, treename, number = None, makedir = False, zfill = 4) :
         '''Get the name of a file that will be automatically added as a friend to the given dataset,
         optionally with a number. 'treename' is the name of the TTree it's expected to contain.
         If makedir = True then the directory to hold the file is created.'''
         if None != number :
-            fname = treename + '_' + str(number) + '.root'
+            fname = treename + '__' + str(number).zfill(zfill) + '__.root'
         else :
             fname = treename + '.root'
         dirname = os.path.join(self.friends_directory(dataname), friendname)
@@ -189,20 +234,25 @@ class DataLibrary(object) :
             os.makedirs(dirname)
         return os.path.join(dirname, fname)
 
-    def selected_file_name(self, dataname) :
+    def selected_file_name(self, dataname, makedir = False, suffix = '') :
         '''Get the name of the file containing the TTree of range and selection
         variables created when making the RooDataSet.'''
-        return os.path.join(self.friends_directory(dataname), 'SelectedTree', 'SelectedTree.root')
+        return self.friend_file_name(dataname, 'SelectedTree' + suffix, 'SelectedTree' + suffix, makedir = makedir)
 
-    def retrieve_dataset(self, dataname, varnames) :
+    def retrieve_dataset(self, dataname, varnames, suffix = '', selection = '') :
         '''Retrieve a previously saved RooDataSet for the given dataset and check that it contains
         variables with the given names. If the file or RooDataSet doesn't exist, or the RooDataSet
         contains different variables, returns None.'''
 
-        tree = self.get_data(dataname)
+        tree = self.get_data(dataname, ignorefriends = ['SelectedTree' + suffix])
 
-        fout = ROOT.TFile.Open(self.dataset_file_name(dataname))
+        fout = ROOT.TFile.Open(self.dataset_file_name(dataname, suffix))
         if not fout or fout.IsZombie():
+            return
+        # selection wasn't always recorded to the file, so for backwards compatibility,
+        # check if it's there first.
+        if fout.Get('selection') and fout.Get('selection').GetTitle() != selection:
+            fout.Close()
             return
         if self.ignorecompilefails :
             variables = self._variables(tree)
@@ -212,7 +262,10 @@ class DataLibrary(object) :
         else :
             checkvarnames = varnames
         checkvarnames = set(checkvarnames)
-        dataset = fout.Get(dataname)
+        dataset = fout.Get(dataname + suffix)
+        if not dataset or dataset.numEntries() == 0 or dataset.get(0).size() == 0:
+            fout.Close()
+            return
         datanames = set(dataset.get(0).contentsString().split(','))
         if dataset and checkvarnames == datanames :
             fout.Close()
@@ -220,38 +273,40 @@ class DataLibrary(object) :
         print 'Variables for dataset', dataname, 'have changed. Expected', checkvarnames, 'found', datanames, '. RooDataSet will be updated.'
         fout.Close()
 
-    def get_dataset(self, dataname, varnames = None, update = False) :
+    def get_dataset(self, dataname, varnames = None, update = False, suffix = '', selection = None) :
         '''Get the RooDataSet of the given name. It's created/updated on demand. varnames is the 
         set of variables to be included in the RooDataSet. They must correspond to those defined 
         in the variables module. If the list of varnames changes or if update = True the 
         RooDataSet will be recreated.'''
 
+        tree = self.get_data(dataname, ignorefriends = ['SelectedTree' + suffix])
+        variables = self._variables(tree)
+        if None == selection:
+            selection = self._selection(tree)
+
         if not varnames :
             varnames = self.varnames
         if not update :
-            dataset = self.retrieve_dataset(dataname, varnames)
+            dataset = self.retrieve_dataset(dataname, varnames, suffix, selection)
             if dataset:
                 return dataset
 
         print 'Making RooDataSet for', dataname
 
-        tree = self.get_data(dataname)
-        variables = self._variables(tree)
-        selectedtreefile = self.selected_file_name(dataname)
-        selectedtreedir = os.path.dirname(selectedtreefile)
-        if not os.path.exists(selectedtreedir) :
-            os.makedirs(selectedtreedir)
-        dataset = make_roodataset(dataname, dataname, tree,
+        selectedtreefile = self.selected_file_name(dataname, True, suffix)
+        datasetname = dataname + suffix
+        dataset = make_roodataset(datasetname, datasetname, tree,
                                   ignorecompilefails = self.ignorecompilefails,
-                                  selection = self._selection(tree),
+                                  selection = selection,
                                   selectedtreefile = selectedtreefile,
-                                  selectedtreename = 'SelectedTree',
+                                  selectedtreename = 'SelectedTree' + suffix,
                                   **dict((var, variables[var]) for var in varnames))
 
-        fname = self.dataset_file_name(dataname)
+        fname = self.dataset_file_name(dataname, suffix)
         print 'Saving to', fname
         fout = ROOT.TFile.Open(fname, 'recreate')
         dataset.Write()
+        ROOT.TNamed('selection', selection).Write()
         fout.Close()
         return dataset
 
@@ -297,6 +352,13 @@ class DataLibrary(object) :
         for dataset in datasets[1:]:
             data.append(self.get_dataset(dataset, **kwargs))
         return data
+
+    def get_dataset_update_time(self, name, suffix = ''):
+        '''Get the time that the RooDataset was last updated.'''
+        fname = self.dataset_file_name(name, suffix)
+        if not os.path.exists(fname):
+            return
+        return datetime.datetime.fromtimestamp(os.path.getmtime(fname))
 
     def check_dataset(self, name) :
         '''Check that all files exist, are unique, contain the required TTree, and all the TTrees have 
@@ -412,7 +474,7 @@ class DataLibrary(object) :
         return h
 
     def parallel_filter_data(self, dataset, selection, outputdir, outputname,
-                             nthreads = multiprocessing.cpu_count(), zfill = 3, overwrite = True):
+                             nthreads = multiprocessing.cpu_count(), zfill = None, overwrite = True, ignorefriends = []):
         '''Filter a dataset with the given selection and save output to the outputdir/outputname/.'''
         outputdir = os.path.join(outputdir, outputname)
         if not os.path.exists(outputdir):
@@ -420,14 +482,16 @@ class DataLibrary(object) :
 
         # Do each file individually in parallel.
         pool = Pool(processes = nthreads)
-        info = self.get_data_info(dataset)
+        info = self.get_data_info(dataset, ignorefriends = ignorefriends)
         nfiles = len(info['files'])
+        if None == zfill:
+            zfill = len(str(nfiles))
         procs = []
         for i in xrange(nfiles):
             kwargs = dict(datalib = self, dataset = dataset, selection = selection,
                           outputdir = outputdir, outputname = outputname, 
                           nthreads = nthreads, zfill = zfill, ifile = i,
-                          overwrite = overwrite)
+                          overwrite = overwrite, ignorefriends = ignorefriends)
             proc = pool.apply_async(_parallel_filter, 
                                     kwds = kwargs)
             procs.append(proc)
