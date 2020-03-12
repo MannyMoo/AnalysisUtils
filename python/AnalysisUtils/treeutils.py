@@ -396,8 +396,14 @@ def tree_mean(tree, formula, selection = None, weight = None) :
             tot += val
             totsq += val**2.
     else :
-        valform = TreeFormula('val_' + random_string(9), formula, tree)
-        weightform = TreeFormula('weight_' + random_string(9), weight, tree)
+        if isinstance(formula, str):
+            valform = TreeFormula('val_' + random_string(9), formula, tree)
+        else:
+            valform = formula
+        if isinstance(weight, str):
+            weightform = TreeFormula('weight_' + random_string(9), weight, tree)
+        else:
+            weightform = weight
         sumw2 = 0.
         ncand = 0
         for i in tree_loop(tree, selection) :

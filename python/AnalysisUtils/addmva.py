@@ -44,6 +44,10 @@ class MVACalc(object) :
     def calc_mva(self, ientry) :
         '''Calculate the MVA variable for the given entry in the input tree.'''
         self.inputtree.LoadTree(ientry)
+        return self()
+
+    def __call__(self):
+        '''Evaluate the MVA for the current TTree entry.'''
         for key, treeval in self.treevars.iteritems() :
             self.tmvavararrays[key][0] = treeval()
         return self.reader.EvaluateMVA(self.weightsvar)
