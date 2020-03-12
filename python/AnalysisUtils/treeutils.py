@@ -199,6 +199,16 @@ class TreeFormula(object) :
 
         return [self.form.GetLeaf(i).GetName() for i in xrange(self.form.GetNcodes())]
 
+def make_treeformula(name, formula, tree, randlen = 0):
+    '''Make a TreeFormula from the given formula if it's a string, otherwise
+    assume it's some other callable and return it as it is.'''
+    # Assume it's some callable object.
+    if not isinstance(formula, str):
+        return formula
+    if randlen > 0:
+        name += '_' + random_string(randlen)
+    return TreeFormula(name, formula, tree)
+
 class TreeFormulaList(object) :
     '''A list of TreeFormulas.'''
 
@@ -206,6 +216,8 @@ class TreeFormulaList(object) :
 
     def __init__(self, tree, formula1, *formulae) :
         '''Takes the TTree and the formulae.'''
+        # Could use make_treeformula, but it uses other functions from TreeFormula
+        # so can't necessarily accept any arbitrary callable.
         self.forms = tuple(TreeFormula(form, form, tree) for form in (formula1,) + formulae)
 
     def is_ok(self) :
@@ -366,11 +378,13 @@ def tree_loop(tree, selection = None, getter = (lambda t, i : t.LoadTree(i))) :
             i = sellist.GetEntry(i)
             getter(tree, i)
             yield i
-        
+
 def tree_iter(tree, formula, selection = None) :
     '''Iterator over a TTree, returning the formula value, optionally only for 
     entries satisfying the selection.'''
-    form = TreeFormula('val_' + random_string(9), formula, tree)
+    form = make_treeformula('val', formula, tree, 9)
+    else:
+        form = formula
     for i in tree_loop(tree, selection) :
         yield form()
 
@@ -386,14 +400,8 @@ def tree_mean(tree, formula, selection = None, weight = None) :
             tot += val
             totsq += val**2.
     else :
-        if isinstance(formula, str):
-            valform = TreeFormula('val_' + random_string(9), formula, tree)
-        else:
-            valform = formula
-        if isinstance(weight, str):
-            weightform = TreeFormula('weight_' + random_string(9), weight, tree)
-        else:
-            weightform = weight
+        valform = make_treeformula('val', formula, tree, 9)
+        weightform = make_treeformula('weight', weight, tree, 9)
         sumw2 = 0.
         ncand = 0
         for i in tree_loop(tree, selection) :
