@@ -155,3 +155,15 @@ def add_sideband_subtraction_weights(datalib, datasetname, treename, branchname,
         treeout.Fill()
     treeout.Write()
     fout.Close()
+
+def normalised_exp_TF1(name, xmin, xmax, ncand = None, mean = None):
+    '''Get a TF1 of a normalised expo with parameters for the number of canidates and the mean.'''
+
+    form = '[0] * exp(-x/[1])/[1]/(exp(-{xmin}/[1]) - exp(-{xmax}/[1]))'.format(**locals())
+    expo = ROOT.TF1(name, form)
+    if ncand != None:
+        expo.SetParameter(0, ncand)
+    if mean != None:
+        expo.SetParameter(1, mean)
+    return expo
+    
