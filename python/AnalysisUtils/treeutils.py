@@ -238,17 +238,18 @@ class TreeFormulaList(object) :
 class TreePVector(TreeFormulaList) :
     '''Momentum 4-vector for a given particle name.'''
     
-    __slots__ = ('forms',)
+    __slots__ = ('forms', 'vectclass')
 
-    def __init__(self, tree, partname, pform = '{partname}_P{comp}') :
+    def __init__(self, tree, partname, pform = '{partname}_P{comp}', comps = 'XYZE', vectclass = ROOT.TLorentzVector) :
         '''Takes the particle name and the tree. The branches used will be 
         pform.format(partname = partname, comp = comp) for comp in XYZE. For true momenta, you can use
         pname = '{partname}_TRUEP_{comp}'.'''
-        TreeFormulaList.__init__(self, tree, *[pform.format(partname = partname, comp = comp) for comp in 'XZYE'])
-        
+        TreeFormulaList.__init__(self, tree, *[pform.format(partname = partname, comp = comp) for comp in comps])
+        self.vectclass = vectclass
+
     def vector(self, tree = None) :
         '''Get the momentum 4-vector as a TLorentzVector.'''
-        return ROOT.TLorentzVector(*self())
+        return self.vectclass(*self())
 
 def rename_branches(tree, *replacements) :
     '''Rename branches in a TTree. 'replacements' should be pairs of (pattern, replacement).
