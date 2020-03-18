@@ -218,6 +218,8 @@ def mv_file(outputfile, dest):
 
 def mv_output(j, outputdir, useQueues = True, zfill = 3):
     '''Move the ouptut files of a job to a single directory, renaming them with number suffices.'''
+    if not os.path.exists(outputdir):
+        os.makedirs(outputdir)
     for sj in j.subjobs.select(status = 'completed'):
         for f in sj.outputfiles:
             splitname = f.namePattern.split('.')
