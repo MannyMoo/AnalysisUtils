@@ -89,6 +89,7 @@ def add_mva_friend(datalib, dataname, weightsfile, weightsvar, outputname, perfi
     if perfile:
         datainfo = datalib.get_data_info(dataname)
         zfill = len(str(len(datainfo['files'])))
+        ignorefriends = datalib.get_ignorefriends_perfile(dataname, ignorefriends = ignorefriends)
         def trees():
             for i in xrange(len(datainfo['files'])):
                 yield i, dict(name = dataname, ifile = i, ignorefriends = [outputname] + ignorefriends)

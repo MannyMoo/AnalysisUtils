@@ -117,10 +117,7 @@ class DataLibrary(object) :
         if not os.path.exists(friendsdir) :
             return
         friends = info.get('friends', [])
-        ignorefriends = list(ignorefriends)
-        for i, _name in enumerate(ignorefriends):
-            if not _name.startswith(name):
-                ignorefriends[i] = name + '_' + _name
+        ignorefriends = self.correct_friend_names(name, *ignorefriends)
         for friendname in os.listdir(friendsdir) :
             if name + '_' + friendname in ignorefriends:
                 continue
@@ -149,6 +146,24 @@ class DataLibrary(object) :
         self.add_friends(name, ignorefriends = ignorefriends)
         info = self._get_data_info(name)
         return info
+
+    def correct_friend_names(self, name, *friends):
+        '''Make sure the list of friend names start with the name of the dataset.'''
+        return [(name + '_' + friend if not friend.startswith(name) else friend) for friend in friends]
+
+    def get_ignorefriends_perfile(self, name, ignorefriends = [], warning = True):
+        '''Get the names of friend trees that should be ignored for perfile operations.'''
+        ignorefriends = self.correct_friend_names(name, *ignorefriends)
+        info = self.get_data_info(name, ignorefriends = ignorefriends)
+        _ignorefriends = []
+        for friend in info['friends'] :
+            if friend in ignorefriends:
+                continue
+            if len(self.get_data_info(friend)['files']) == len(info['files']):
+                _ignorefriends.append(friend)
+        if warning:
+            print 'Warning: skipping friends', _ignorefriends, 'of', name, 'due to different n. files'
+        return ignorefriends + _ignorefriends
 
     def get_data(self, name, ifile = None, iend = None, addfriends = True, ignorefriends = []) :
         '''Get the dataset of the given name. Optionally for one (ifile) or a range (ifile:iend) of files.
@@ -181,10 +196,7 @@ class DataLibrary(object) :
             t.selection = info['selection']
         for varname, varinfo in self._variables(t).items() :
             t.SetAlias(varname, varinfo['formula'])
-        ignorefriends = list(ignorefriends)
-        for i, _name in enumerate(ignorefriends):
-            if not _name.startswith(name):
-                ignorefriends[i] = name + '_' + _name
+        ignorefriends = self.correct_friend_names(name, *ignorefriends)
         if addfriends and 'friends' in info :
             for friend in info['friends'] :
                 if friend in ignorefriends:
