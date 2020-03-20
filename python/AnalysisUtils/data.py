@@ -159,7 +159,7 @@ class DataLibrary(object) :
         for friend in info['friends'] :
             if friend in ignorefriends:
                 continue
-            if len(self.get_data_info(friend)['files']) == len(info['files']):
+            if len(self.get_data_info(friend)['files']) != len(info['files']):
                 _ignorefriends.append(friend)
         if warning:
             print 'Warning: skipping friends', _ignorefriends, 'of', name, 'due to different n. files'
