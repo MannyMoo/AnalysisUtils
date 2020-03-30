@@ -4,7 +4,7 @@
 
 pps = None
 
-def initialise(dddbtag = '') :
+def initialise(dddbtag = '', datatype = '') :
     global pps
     if pps :
         return
@@ -16,7 +16,9 @@ def initialise(dddbtag = '') :
 
     if dddbtag :
         LHCbApp().DDDBtag = dddbtag
-
+    elif datatype:
+        from Configurables import CondDB
+        CondDB().LatestGlobalTagByDataType = datatype
     gaudi = AppMgr()
 
     # Annoyingly have to initialise the AppMgr to initialise the ppSvc
@@ -24,9 +26,9 @@ def initialise(dddbtag = '') :
 
     pps   = gaudi.ppSvc()
 
-def print_info(pname, dddbtag = '') :
+def print_info(pname, dddbtag = '', datatype = '') :
 
-    initialise(dddbtag)
+    initialise(dddbtag, datatype)
 
     # See if it's an int ID.
     try :
@@ -40,8 +42,8 @@ def print_info(pname, dddbtag = '') :
         print "Couldn't find particle named {0!r}".format(pname)
     print
 
-def print_all(dddbtag = '') :
-    initialise(dddbtag)
+def print_all(dddbtag = '', datatype = '') :
+    initialise(dddbtag, datatype)
     print pps.all()
 
 def main() :
@@ -51,6 +53,7 @@ def main() :
     argparser.add_argument('--dddbtag', default = '',
                            help = 'DDDB tag to use. Note that the DDDB contains ParticleTable.txt so it\'s\
 important to use the correct tag.')
+    argparser.add_argument('--datatype', default = '', help = 'Set the DataType to get the latest global tags.')
     argparser.add_argument('--all', action = 'store_true',
                            help = 'Print the full particle table.')
     argparser.add_argument('particles', nargs = '*',
@@ -59,10 +62,10 @@ important to use the correct tag.')
     args = argparser.parse_args()
 
     if args.all :
-        print_all(args.dddbtag)
+        print_all(args.dddbtag, args.datatype)
     
     for partname in args.particles :
-        print_info(partname, args.dddbtag)
+        print_info(partname, args.dddbtag, args.datatype)
 
 if __name__ == '__main__' :
     main()
