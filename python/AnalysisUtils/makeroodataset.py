@@ -5,8 +5,9 @@
 from AnalysisUtils.RooFit import RooFit
 import ROOT
 from AnalysisUtils.treeutils import TreeFormula, make_chain, TreeBranchAdder
+from AnalysisUtils.stringformula import NamedFormula
 
-class TreeVar(object) :
+class TreeVar(NamedFormula) :
     '''Proxy class between a variable, or function of variables, in a TTree and a RooRealVar.'''
 
     def __init__(self, tree, name, title, formula, xmin, xmax, unit = '', discrete = False) :
@@ -17,8 +18,7 @@ class TreeVar(object) :
         a float.
         xmin & xmax: the range of the RooRealVar.'''
 
-        self.xmin = xmin
-        self.xmax = xmax
+        NamedFormula.__init__(name, title, formula, xmin, xmax, unit, discrete)
         if not discrete :
             self.var = ROOT.RooRealVar(name, title, xmin + (xmax-xmin)/2., xmin, xmax, unit)
             self._set = self.var.setVal
@@ -35,7 +35,6 @@ class TreeVar(object) :
             for i in xrange(int(xmin), int(xmax)+1) :
                 self.var.defineType(name + str(i), i)
         self.tree = tree
-        self.formula = formula
         if isinstance(formula, str) :
             self.form = TreeFormula(name, formula, tree)
         else :
@@ -76,7 +75,10 @@ def make_roodataset(dataname, datatitle, tree, nentries = -1, selection = '',
     print 'Variables:'
     skippedvars = []
     for var, args in variables.items() :
-        treevar = TreeVar(tree, var, **args)
+        if isinstance(args, NamedFormula):
+            treevar = TreeVar(tree, **args.dict())
+        else:
+            treevar = TreeVar(tree, var, **args)
         if not treevar.form.is_ok() :
             if ignorecompilefails :
                 skippedvars.append(treevar)
