@@ -75,8 +75,8 @@ def make_roodataset(dataname, datatitle, tree, nentries = -1, selection = '',
     print 'Variables:'
     skippedvars = []
     for var, args in variables.items() :
-        if isinstance(args, NamedFormula):
-            treevar = TreeVar(tree, **args.dict())
+        if 'name' in args:
+            treevar = TreeVar(tree, **args)
         else:
             treevar = TreeVar(tree, var, **args)
         if not treevar.form.is_ok() :
