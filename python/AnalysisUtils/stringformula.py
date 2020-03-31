@@ -31,17 +31,17 @@ for func, op in (('add', '+'),
     setattr(StringFormula, '__r{0}__'.format(func),
             eval('lambda self, other : self._roperator({0!r}, other)'.format(op)))
 
-class NamedFormula(object):
+class NamedFormula(dict):
     '''A formula with name, title, range, units, and discrete flag.'''
 
-    def __init__(self, name, title, formula, xmin, xmax, unit = None, discrete = False):
-        self.name = name
-        self.formula = formula
-        self.xmin = xmin
-        self.xmax = xmax
-        self.title = title
-        self.unit = unit
-        self.discrete = discrete
+    _args = 'name', 'title', 'formula', 'xmin', 'xmax'
+    _optargs = {'unit' : None, 'discrete' : False}
+
+    def __init__(self, *args, **kwargs):
+        dict.__init__(self, *args, **kwargs)
+        for val in self._args:
+            if not val in self:
+                raise NameError('Must include {0!r} in constructor arguments!'.format(val))
 
     def set_alias(self, tree):
         '''Set the alias name -> formula for the given TTree.'''
@@ -61,13 +61,17 @@ class NamedFormula(object):
             val = StringFormula(self.formula)
         return (self.xmin <= val) & (val <= self.xmax)
 
-    def __getitem__(self, name):
-        '''So it can be accessed like a dict, for backwards compatibility.'''
-        return getattr(self, name)
+    def histo_string(self, name = None, nbins = 100):
+        if not name:
+            name = self.name
+        return '{0}({1}, {2}, {3})'.format(name, nbins, self.xmin, self.xmax)
 
-    def dict(self):
-        '''Get the dict of values.'''
-        return self.__dict__
+for arg in NamedFormula._args:
+    setattr(NamedFormula, arg, property(fget = eval('lambda self : self[{0!r}]'.format(arg)),
+                                        fset = eval('lambda self, val : self.__setitem__({0!r}, val)'.format(arg))))
+for arg, default in NamedFormula._optargs.items():
+    setattr(NamedFormula, arg, property(fget = eval('lambda self : self.get({0!r}, {1!r})'.format(arg, default)),
+                                        fset = eval('lambda self, val : self.__setitem__({0!r}, val)'.format(arg))))
 
 class NamedFormulae(dict):
     '''A collection of NamedFormula instances.'''

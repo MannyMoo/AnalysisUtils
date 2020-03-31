@@ -105,7 +105,7 @@ class DataLibrary(object) :
             if not isinstance(info, dict) :
                 info = {'tree' : info[0], 'files' : info[1:]}
             if info.get('sortfiles', True):
-                info['files'].sort()
+                info['files'] = sorted(info['files'])
             return info
         except KeyError :
             raise ValueError('Unknown data type: ' + repr(name))
@@ -195,7 +195,8 @@ class DataLibrary(object) :
         if 'selection' in info :
             t.selection = info['selection']
         for varname, varinfo in self._variables(t).items() :
-            t.SetAlias(varname, varinfo['formula'])
+            if varname != varinfo['formula']:
+                t.SetAlias(varname, varinfo['formula'])
         ignorefriends = self.correct_friend_names(name, *ignorefriends)
         if addfriends and 'friends' in info :
             for friend in info['friends'] :
