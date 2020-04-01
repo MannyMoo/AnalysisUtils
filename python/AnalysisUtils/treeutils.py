@@ -2,6 +2,7 @@
 
 import ROOT, pprint, re, random, string
 from array import array
+from AnalysisUtils.stringformula import NamedFormula
 
 def random_string(n = 6, chars = string.ascii_uppercase + string.ascii_lowercase) :
     '''Generate a random string of length n.'''
@@ -202,6 +203,9 @@ class TreeFormula(object) :
 def make_treeformula(name, formula, tree, randlen = 0):
     '''Make a TreeFormula from the given formula if it's a string, otherwise
     assume it's some other callable and return it as it is.'''
+    if isinstance(formula, NamedFormula):
+        name = formula.name
+        formula = formula.formula
     # Assume it's some callable object.
     if not isinstance(formula, str):
         return formula
