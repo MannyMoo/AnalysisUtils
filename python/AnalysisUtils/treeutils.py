@@ -2,7 +2,7 @@
 
 import ROOT, pprint, re, random, string
 from array import array
-from AnalysisUtils.stringformula import NamedFormula
+from AnalysisUtils.stringformula import NamedFormula, StringFormula
 
 def random_string(n = 6, chars = string.ascii_uppercase + string.ascii_lowercase) :
     '''Generate a random string of length n.'''
@@ -187,7 +187,10 @@ class TreeFormula(object) :
     def __del__(self) :
         '''For TChains, remove the TTreeFormula from the TChain's notify list.
         Delete the notify list if it's empty.'''
-        treeid = id(self.form.GetTree())
+        try:
+            treeid = id(self.form.GetTree())
+        except AttributeError:
+            return
         if treeid in TreeFormula.chainformulae :
             arr = TreeFormula.chainformulae[treeid]
             arr.Remove(self.form)
@@ -195,10 +198,19 @@ class TreeFormula(object) :
                 self.form.GetTree().SetNotify(None)
                 del TreeFormula.chainformulae[treeid]
 
+    def expanded_formula(self):
+        '''Get the formula, expanding out any aliases.'''
+        aliases = get_aliases(self.form.GetTree())
+        if not aliases:
+            return prevform
+        return StringFormula(self.form.GetTitle()).substitute_variables(**aliases)
+
     def used_leaves(self) :
         '''Get the names of all the branches used by the formula.'''
-
-        return [self.form.GetLeaf(i).GetName() for i in xrange(self.form.GetNcodes())]
+        #return [self.form.GetLeaf(i).GetName() for i in xrange(self.form.GetNcodes())]
+        # Would prefer if this could be done using the functionality inside TTreeFormula.DefinedVariable 
+        # and TTreeFormula.FindLeafForExpression, but this is mostly hidden.
+        return self.expanded_formula().named_variables()
 
 def make_treeformula(name, formula, tree, randlen = 0):
     '''Make a TreeFormula from the given formula if it's a string, otherwise
@@ -273,6 +285,14 @@ def has_active_branches(tree) :
     '''Check if the TTree has any active branches.'''
     return any(not branch.TestBit(ROOT.kDoNotProcess) for branch in tree.GetListOfBranches())
 
+def get_aliases(tree):
+    '''Get the aliases from the TTree as a dict.'''
+    aliases = tree.GetListOfAliases()
+    if not aliases:
+        return {}
+    tree.GetListOfAliases().SetBit(ROOT.kMustCleanup, False)
+    return {v.GetName() : v.GetTitle() for v in aliases}
+
 def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
               removebranches = (), rename = None, write = False, returnfriends = False,
               fname = None, foption = 'recreate') :
@@ -309,6 +329,7 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
     
     if fname:
         fout = ROOT.TFile.Open(fname, foption)
+        write = True
     if nentries > 0 :
         treecopy = tree.CopyTree('', '', int(nentries))
     else :
@@ -321,6 +342,9 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
         tree.SetEventList(prevlist)
 
     tree.SetBranchStatus('*', True)
+
+    for fromval, toval in get_aliases(tree).items():
+        treecopy.SetAlias(fromval, toval)
 
     copyfriends = []
     if tree.GetListOfFriends() :

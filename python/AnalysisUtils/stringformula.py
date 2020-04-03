@@ -1,6 +1,6 @@
 '''Wrapper classes for string formulae.'''
 
-import ROOT
+import ROOT, re
 
 class StringFormula(str):
     '''Combine string variables as if they were numerical types.'''
@@ -13,6 +13,31 @@ class StringFormula(str):
 
     def _roperator(self, operator, other):
         return StringFormula('({0}) {1} ({2})'.format(other, operator, self))
+
+    def named_variables(self):
+        '''Get all named variables used in this formula.'''
+        return re.findall('[A-Za-z_][A-Za-z0-9_]*', self)
+
+    def substitute_variables(self, recursive = True, **kwargs):
+        '''Substitute named variables for other terms.'''
+        if recursive:
+            for fromval, toval in kwargs.items():
+                if toval in kwargs and kwargs[toval] == fromval:
+                    raise ValueError('Circular substition: {0} -> {1} -> {0}!'.format(fromval, toval))
+            prevform = StringFormula(self)
+            newform = self.substitute_variables(False, **kwargs)
+            while newform != prevform:
+                prevform = newform
+                newform = newform.substitute_variables(False, **kwargs)
+            return newform
+
+        subform = StringFormula(self)
+        # This isn't entirely reliable, as, eg, one of the earlier subsitutions may contain
+        # one of the later substitutions as a sub-string. Use of compiler.parse could be
+        # safer, but more complicated.
+        for var, sub in sorted(kwargs.items(), key = lambda x : len(x[0]), reverse = True):
+            subform = StringFormula(subform.replace(var, '(' + sub + ')'))
+        return subform
 
 for func, op in (('add', '+'),
                  ('sub', '-'),
@@ -88,9 +113,20 @@ class NamedFormula(dict):
             val = StringFormula(self.formula)
         return (self.xmin <= val) & (val <= self.xmax)
 
-    def histo_string(self, name = None, nbins = 100):
+    def histo_string(self, name = None, nbins = None, usealias = True):
         '''Get the string to make a histo with TTree::Draw.'''
-        return '{0}({1}, {2}, {3})'.format(self._name(name), nbins, self.xmin, self.xmax)
+        return '{4} >> {0}({1}, {2}, {3})'.format(self._name(name), self._nbins(nbins), self.xmin, self.xmax,
+                                                  (self.name if usealias else self.formula))
+
+    def histo2D_string(self, variableY, name = None, nbins = None, nbinsY = None, usealias = True):
+        '''Get the string to make a 2D histo with TTree::Draw'''
+        if None == name:
+            name = '{0}_vs_{1}'.format(variableY.name, self.name)
+        return '{8} : {7} >> {0}({1}, {2}, {3}, {4}, {5}, {6})'\
+            .format(name, self._nbins(nbins), self.xmin, self.xmax,
+                    variableY._nbins(nbinsY), variableY.xmin, variableY.xmax,
+                    (self.name if usealias else self.formula),
+                    (variableY.name if usealias else variableY.formula))
 
     def histo(self, name = None, nbins = None, suffix = '', htype = ROOT.TH1F):
         '''Make a histo with the given range.'''
@@ -132,3 +168,22 @@ class NamedFormulae(dict):
         for val in vals[1:]:
             sel = sel & val.range_selection(usealiases)
         return sel
+
+    def histo_string(self, variable, name = None, nbins = None, usealias = True):
+        '''Get the string to make a histo with TTree::Draw for the given variable name.'''
+        return self[variable].histo_string(name = name, nbins = nbins, usealias = usealias)
+
+    def histo2D_string(self, variable, variableY, name = None, nbins = None, nbinsY = None, usealias = True):
+        '''Get the string to make a 2D histo with TTree::Draw'''
+        return self[variable].histo2D_string(self[variableY], name = name, nbins = nbins, nbinsY = nbinsY,
+                                             usealias = usealias)
+
+    def histo(self, variable, name = None, nbins = None, suffix = '', htype = ROOT.TH1F):
+        '''Make a histo for the given variable with the given range.'''
+        return self[variable].histo(name = name, nbins = nbins, suffix = suffix, htype = htype)
+
+    def histo2D(self, variable, variableY, name = None, nbins = None, nbinsY = None, suffix = '', 
+                htype = ROOT.TH2F):
+        '''Make a 2D histo with variable on the x-axis and variableY on the y-axis.'''
+        return self[variable].histo2D(variableY, name = name, nbins = nbins, nbinsY = nbinsY,
+                                      suffix = suffix, htype = htype)

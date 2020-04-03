@@ -8,6 +8,7 @@ from AnalysisUtils.treeutils import make_chain, set_prefix_aliases, check_formul
 from array import array
 from copy import deepcopy
 from multiprocessing import Pool
+from AnalysisUtils.stringformula import NamedFormulae
 
 def _is_ok(tree, fout, selection):
     '''Check if a TTree has been copied OK to the output file.'''
@@ -66,7 +67,7 @@ class DataLibrary(object) :
 
     def __init__(self, datapaths, variables, ignorecompilefails = False, selection = '', varnames = ()) :
         self.datapaths = {}
-        self.variables = variables
+        self.variables = NamedFormulae(variables)
         self.varnames = varnames
         self.selection = selection
         self.ignorecompilefails = ignorecompilefails
@@ -190,7 +191,7 @@ class DataLibrary(object) :
         if t.GetListOfBranches():
             set_prefix_aliases(t, aliases)
         if 'variables' in info :
-            t.variables = dict(self.variables)
+            t.variables = NamedFormulae(self.variables)
             t.variables.update(info['variables'])
         if 'selection' in info :
             t.selection = info['selection']
