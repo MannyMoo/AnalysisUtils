@@ -377,7 +377,9 @@ class DataLibrary(object) :
         self.make_getters(mergeddata)
 
     def get_matching_datasets(self, name, *names):
-        '''Get the names of all datasets that match any of the given regex names.'''
+        '''Get the names of all datasets that contain matches to any of the given regex names. Note that
+        you can specify that the regex matches at the start/end of the string by prefixing with ^ or
+        suffixing with $ so you can force it to match the entire string.'''
         names = (name,) + names
         datasets = list(filter(lambda dataset: any(re.search(name, dataset) for name in names), self.datasets()))
         return datasets
@@ -386,8 +388,12 @@ class DataLibrary(object) :
         '''Get a TChain that's the combination of all datasets matching the given regex names.'''
         datasets = self.get_matching_datasets(name, *names)
         data = self.get_data(datasets[0])
+        data.mergeddatasets = []
+        data.GetEntries() # Force calculation of n. entries
         for dataset in datasets[1:]:
-            data.Add(self.get_data(dataset))
+            _data = self.get_data(dataset)
+            data.Add(_data)
+            data.mergeddatasets.append(_data)
         return data
 
     def get_merged_dataset(self, name, *names, **kwargs):
