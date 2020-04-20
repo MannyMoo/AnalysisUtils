@@ -157,7 +157,7 @@ class DataLibrary(object) :
         ignorefriends = self.correct_friend_names(name, *ignorefriends)
         info = self.get_data_info(name, ignorefriends = ignorefriends)
         _ignorefriends = []
-        for friend in info['friends'] :
+        for friend in info.get('friends', []) :
             if friend in ignorefriends:
                 continue
             if len(self.get_data_info(friend)['files']) != len(info['files']):

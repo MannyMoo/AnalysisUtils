@@ -311,6 +311,30 @@ def production_info(prod) :
             'path' : path,
             'steps' : steps}
 
+def transformation_info(prod):
+    '''Get the transformation info for the given production/transformation number.'''
+    returnval = dirac_call('dirac-transformation-information', prod)
+    vals = {}
+    for line in returnval['stdout'].splitlines()[1:]:
+        splitline = line.split(': ')
+        vals[splitline[0].strip()] = ': '.join(splitline[1:]).strip()
+    return vals
+
+def request_for_prod(prod):
+    '''Get the MC request number from the given production. Note that this returns the parent
+    request, if it has sub-requests.'''
+    info = transformation_info(prod)
+    return int(info['Request'])
+
+def request_for_path(path):
+    '''Get the MC request number from the given bk path.'''
+    prods = prod_for_path(path)
+    requests = []
+    for name, _prods in prods:
+        _requests = tuple(request_from_prod(prod) for prod in _prods)
+        requests.append((name, _requests))
+    return requests
+
 def get_data_settings(fname, debug = False, forapp = 'DaVinci', fout = None, latestTagsForRealData = True) :
     '''Get the tags and data type for the data in the given file of LFNs.'''
     if debug :
