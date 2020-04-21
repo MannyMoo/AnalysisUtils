@@ -79,7 +79,7 @@ def _parallel_add_mva_friend(datalib, treeinfo, weightsfile, weightsvar, outputn
     tree = datalib.get_data(**treeinfo)
     return make_mva_tree(tree, weightsfile, weightsvar, outputname + '_tree', fout, branchname = outputname)
 
-def add_mva_friend(datalib, dataname, weightsfile, weightsvar, outputname, perfile = False, overwrite = False,
+def add_mva_friend(datalib, dataname, weightsfile, weightsvar, outputname, perfile = False, overwrite = True,
                    nthreads = multiprocessing.cpu_count(), ignorefriends = []):
     '''Add a friend TTree for the given dataset with the values of the given MVA. 'outputname' will
     be used as the output file name and the branch name. If perfile = True, one file will be written
