@@ -49,7 +49,142 @@ class DataLibrary(object) :
 
     class DataChain(ROOT.TChain):
         '''Wrapper for TChain to make sure that its file gets closed when it's deleted.'''
-        
+
+        def __init__(self, name, tree, files, variables = {}, varnames = (), selection = '',
+                     datasetdir = None, ignorecompilefails = False, aliases = {},
+                     friends = [], addfriends = True, ignorefriends = [], sortfiles = True,
+                     zombiewarning = True, build = True) :
+            self.name = name
+            self.tree = tree
+            if sortfiles:
+                self.files = sorted(files)
+            else:
+                self.files = list(files)
+            if not self.files:
+                raise VauleError('ERROR constructing DataChain {0}: no files given!'.format(self.name))
+            self.variables = NamedFormulae(variables)
+            self.varnames = varnames
+            self.selection = selection
+            self.ignorecompilefails = ignorecompilefails
+            self.aliases = aliases
+            self.friends = []
+            if datasetdir:
+                self.datasetdir = datasetdir
+            else:
+                self.datasetdir = os.path.dirname(self.files[0])
+
+            if not build:
+                return
+
+            super(DataLibrary.DataChain, self).__init__(tree)
+            for f in self.files:
+                self.Add(f)
+
+            for varname, varinfo in self.variables.items():
+                self.SetAlias(varname, varinfo['formula'])
+            if self.is_ok(zombiewarning):
+                set_prefix_aliases(self, self.aliases)
+
+            if not addfriends:
+                return
+
+            friends = filter(lambda chain : chain.name not in ignorefriends, friends)
+            friends += self.get_auto_friends(ignorefriends)
+            for friend in friends:
+                self.AddFriend(friend)
+
+        def AddFriend(self, friend, alias = '', warn = False):
+            '''Add a friend tree.'''
+            super(DataLibrary.DataChain, self).AddFriend(friend, alias, warn)
+            self.friends.append(friend)
+
+        def is_ok(self, warning = True):
+            '''Check if we can load the first entry in the chain.'''
+            result = self.LoadTree(0)
+            if result >= 0:
+                return True
+            if warning:
+                print >> sys.stderr, 'ERROR: DataLibrary.DataChain.is_ok: dataset', self.name,\
+                    'is a zombie! (error {0})'.format(result)
+            return False
+
+        def friends_directory(self):
+            '''Get the directory containing friends that will be automatically loaded.'''
+            return os.path.join(self.datasetdir, self.name + '_Friends')
+
+        def _ignore(self, friendname, ignorefriends):
+            return friendname in ignorefriends or self.name + '_' + friendname in ignorefriends
+
+        def get_auto_friends(self, ignorefriends = [], build = True):
+            '''Get friend trees from from the friends directory to be added.'''
+            friendsdir = self.friends_directory()
+            if not os.path.exists(friendsdir):
+                return []
+            friends = []
+            for friendname in os.listdir(friendsdir):
+                if self._ignore(friendname, ignorefriends):
+                    continue
+                files = glob.glob(os.path.join(friendsdir, friendname, '*.root'))
+                if not files :
+                    continue
+                fname = os.path.split(files[0])[1]
+                # Take the name of the file as the name of the TTree
+                treename = fname[:-len('.root')]
+                # Check if the file ends with __[0-9]+__, in which case remove it.
+                search = re.search('__[0-9]+\__.root$', fname)
+                if search:
+                    treename = treename[:search.start()]
+                friendname = self.name + '_' + friendname
+                friend = DataLibrary.DataChain(friendname, treename, files, variables = self.variables,
+                                               aliases = self.aliases, ignorefriends = ignorefriends,
+                                               build = build)
+                # False as it will have already given a warning from the constructor.
+                if friend.is_ok(False):
+                    friends.append(friend)
+            return friends
+
+        def friend_file_name(self, friendname, treename, number = None, makedir = False, zfill = 4) :
+            '''Get the name of a file that will be automatically added as a friend to this dataset,
+            optionally with a number. 'treename' is the name of the TTree it's expected to contain.
+            If makedir = True then the directory to hold the file is created.'''
+            if None != number :
+                fname = treename + '__' + str(number).zfill(zfill) + '__.root'
+            else :
+                fname = treename + '.root'
+            dirname = os.path.join(self.friends_directory(), friendname)
+            if makedir and not os.path.exists(dirname) :
+                os.makedirs(dirname)
+            return os.path.join(dirname, fname)
+
+        def get_ignorefriends_perfile(self, ignorefriends = [], warning = True):
+            '''Get friends that should be ignored for per-file operations as they have different n. files.'''
+            ignores = []
+            for friend in self.friends:
+                if self._ignore(friend.name, ignorefriends):
+                    continue
+                if len(friend.files) != len(self.files):
+                    ignores.append(friend.name)
+            if warning:
+                print 'Warning: skipping friends', ignores, 'of', self.name, 'due to different n. files'
+            return ignorefriends + ignores
+
+        def get_subset(self, ifile, iend = None, addfriends = True, ignorefriends = [], ignoreperfile = False):
+            '''Get a subset of the chain using a given file index or range of files.'''
+            ignorefriends = self.get_ignorefriends_perfile(ignorefriends, not ignoreperfile)
+            friends = []
+            if addfriends:
+                for friend in self.friends:
+                    if self._ignore(friend.name, ignorefriends):
+                        continue
+                    friends.append(friend.get_subset(ifile, iend, addfriends, ignorefriends, ignoreperfile))
+            if None == iend:
+                iend = ifile+1
+            files = self.files[ifile:iend]
+            return DataLibrary.DataChain('{0}_{1}_{2}'.join(self.name, ifile, iend), self.tree, files,
+                                         self.variables, self.varnames, self.selection, self.datasetdir,
+                                         self.ignorecompilefails, self.aliases, friends, False,
+                                         sortfiles = False)
+
         def Show(self, n):
             '''Show the contents of entry n, also for friend trees.'''
             super(DataLibrary.DataChain, self).Show(n)
@@ -65,12 +200,14 @@ class DataLibrary(object) :
                 #print 'Close file', self.GetFile().GetName()
                 self.GetFile().Close()
 
-    def __init__(self, datapaths, variables, ignorecompilefails = False, selection = '', varnames = ()) :
+    def __init__(self, datapaths, variables, ignorecompilefails = False, selection = '', varnames = (),
+                 aliases = {}) :
         self.datapaths = {}
         self.variables = NamedFormulae(variables)
         self.varnames = varnames
         self.selection = selection
         self.ignorecompilefails = ignorecompilefails
+        self.aliases = aliases
         self.make_getters(datapaths)
 
     def __getstate__(self):
@@ -81,76 +218,24 @@ class DataLibrary(object) :
         '''Set state for unpickling.'''
         self.__init__(**state)
 
-    def _getattr(self, tree, attr) :
-        '''Get an attr from the tree if it has it, else return the DataLibrary's one.'''
-        if hasattr(tree, attr) :
-            return getattr(tree, attr)
-        return getattr(self, attr)
-
-    def _variables(self, tree) :
-        '''Get the variables dict of the TTree if it has one, else return the default dict.'''
-        return self._getattr(tree, 'variables')
-
-    def _selection(self, tree) :
-        '''Get the selection of the TTree if it has one, else return the default selection.'''
-        return self._getattr(tree, 'selection')
-
     def datasets(self) :
         '''Get the sorted list of dataset names.'''
         return sorted(self.datapaths.keys())
 
-    def _get_data_info(self, name) :
+    def get_data_info(self, name) :
         '''Get the info dict on the dataset of the given name without any extra actions.'''
         try :
             info = self.datapaths[name]
-            if not isinstance(info, dict) :
-                info = {'tree' : info[0], 'files' : info[1:]}
-            if info.get('sortfiles', True):
-                info['files'] = sorted(info['files'])
-            return info
         except KeyError :
-            raise ValueError('Unknown data type: ' + repr(name))
-
-    def add_friends(self, name, ignorefriends = []) :
-        '''Add friends of the given dataset from the files under its friends directory.'''
-        info = self._get_data_info(name)
-        friendsdir = self.friends_directory(name)
-        if not os.path.exists(friendsdir) :
-            return
-        friends = info.get('friends', [])
-        ignorefriends = self.correct_friend_names(name, *ignorefriends)
-        for friendname in os.listdir(friendsdir) :
-            if name + '_' + friendname in ignorefriends:
-                continue
-            files = sorted(glob.glob(os.path.join(friendsdir, friendname, '*.root')))
-            if not files :
-                continue
-            fname = os.path.split(files[0])[1]
-            # Take the name of the file as the name of the TTree
-            treename = fname[:-len('.root')]
-            # Check if the file ends with __[0-9]+__, in which case remove it.
-            search = re.search('__[0-9]+\__.root', fname)
-            if search and search.end() == len(fname) :
-                treename = treename[:search.start()]
-            friendname = name + '_' + friendname
-            if not friendname in self.datapaths :
-                self.make_getters({friendname : {'files' : files,
-                                                 'tree' : treename}})
-            if not friendname in friends :
-                friends.append(friendname)
-        if friends :
-            info['friends'] = friends
-            self.datapaths[name] = info
-
-    def get_data_info(self, name, ignorefriends = []) :
-        '''Get the info dict on the dataset of the given name.'''
-        self.add_friends(name, ignorefriends = ignorefriends)
-        info = self._get_data_info(name)
+            raise ValueError('DataLibrary.get_data_info: Unknown data type: ' + repr(name))
+        if not isinstance(info, dict) :
+            info = {'tree' : info[0], 'files' : info[1:]}
+        else:
+            info = dict(info)
+        for attr in 'variables', 'varnames', 'selection', 'aliases', 'ignorecompilefails':
+            if not attr in info:
+                info[attr] = getattr(self, attr)
         return info
-
-    def correct_friend_names(self, name, *friends):
-        '''Make sure the list of friend names start with the name of the dataset.'''
-        return [(name + '_' + friend if not friend.startswith(name) else friend) for friend in friends]
 
     def get_ignorefriends_perfile(self, name, ignorefriends = [], warning = True):
         '''Get the names of friend trees that should be ignored for perfile operations.'''
@@ -169,54 +254,11 @@ class DataLibrary(object) :
     def get_data(self, name, ifile = None, iend = None, addfriends = True, ignorefriends = []) :
         '''Get the dataset of the given name. Optionally for one (ifile) or a range (ifile:iend) of files.
         If addfriends = False, friend trees aren't added.'''
-        info = self.get_data_info(name, ignorefriends = ignorefriends)
-        files = info['files']
+        info = self.get_data_info(name)
+        tree = DataLibrary.DataChain(name, addfriends = addfriends, ignorefriends = ignorefriends, **info)
         if None != ifile:
-            if None == iend:
-                iend = ifile+1
-            files = files[ifile:iend]
-        t = make_chain(info['tree'], *files, Class = DataLibrary.DataChain)
-        t.name = name
-        # Load the first entry to check that the TChain is OK.
-        loadresult = t.LoadTree(0)
-        if loadresult < 0:
-            print >> sys.stderr, 'ERROR: datalib.get_data: dataset', name, 'is a zombie! (error {0})'\
-                        .format(loadresult)
-            return None
-        if ifile != None:
-            t.name += '_' + str(ifile)
-        if iend != None:
-            t.name += '_' + str(iend)
-        aliases = info.get('aliases', {})
-        if t.GetListOfBranches():
-            set_prefix_aliases(t, aliases)
-        if 'variables' in info :
-            t.variables = NamedFormulae(self.variables)
-            t.variables.update(info['variables'])
-        if 'selection' in info :
-            t.selection = info['selection']
-        for varname, varinfo in self._variables(t).items() :
-            if varname != varinfo['formula']:
-                t.SetAlias(varname, varinfo['formula'])
-        ignorefriends = self.correct_friend_names(name, *ignorefriends)
-        if addfriends and 'friends' in info :
-            for friend in info['friends'] :
-                if friend in ignorefriends:
-                    continue
-                if ifile != None :
-                    if len(self.get_data_info(friend)['files']) == len(info['files']):
-                        friendtree = self.get_data(friend, ifile, iend)
-                    else:
-                        print 'Warning: skipping friend', friend, 'of', name, 'due to different n. files'
-                        continue
-                else:
-                    friendtree = self.get_data(friend)
-                if not friendtree:
-                    continue
-                t.AddFriend(friendtree)
-                # Have to keep a reference to the friend tree in python, otherwise it doesn't get cleaned up.
-                t.friends = getattr(t, 'friends', []) + [friendtree]
-        return t
+            tree = tree.get_subset(ifile, iend)
+        return tree
 
     def get_data_frame(self, name, *args, **kwargs):
         '''Get a RDataFrame for the given dataset. Can take any of the arguments to DataLibrary.get_data.'''
@@ -228,12 +270,7 @@ class DataLibrary(object) :
 
     def dataset_dir(self, dataname):
         '''Get the directory where RooDataSets etc will be saved for this dataset.'''
-        info = self._get_data_info(dataname)
-        if 'datasetdir' in info :
-            dirname = info['datasetdir']
-        else :
-            dirname = os.path.dirname(info['files'][0])
-        return dirname
+        return self.get_data(dataname, build = False).datasetdir
 
     def dataset_file_name(self, dataname, suffix = '') :
         '''Get the name of the file containing the RooDataset corresponding to the given
@@ -248,14 +285,7 @@ class DataLibrary(object) :
         '''Get the name of a file that will be automatically added as a friend to the given dataset,
         optionally with a number. 'treename' is the name of the TTree it's expected to contain.
         If makedir = True then the directory to hold the file is created.'''
-        if None != number :
-            fname = treename + '__' + str(number).zfill(zfill) + '__.root'
-        else :
-            fname = treename + '.root'
-        dirname = os.path.join(self.friends_directory(dataname), friendname)
-        if makedir and not os.path.exists(dirname) :
-            os.makedirs(dirname)
-        return os.path.join(dirname, fname)
+        return self.get_data(dataname, build = False).friend_file_name(friendname, treename, number, makedir, zfill)
 
     def add_friend_tree(self, dataname, friendname, adderkwargs, 
                         tree = None, treename = None, perfile = False, makedir = True, zfill = 4):
@@ -386,15 +416,30 @@ class DataLibrary(object) :
         
     def get_merged_data(self, name, *names):
         '''Get a TChain that's the combination of all datasets matching the given regex names.'''
-        datasets = self.get_matching_datasets(name, *names)
-        data = self.get_data(datasets[0])
-        data.mergeddatasets = []
-        data.GetEntries() # Force calculation of n. entries
+        # Annoyingly, TChains don't behave properly when Adding other TChains that have friends,
+        # so we have to merge the TChains without friends, merge the friend TChains, and then
+        # add them as friends.
+        datasetnames = self.get_matching_datasets(name, *names)
+        datasets = [self.get_data(dataset) for dataset in datasetnames]
+        mergeddata = self.get_data(datasetnames[0], addfriends = False)
+        mergeddata.GetEntries()
+        mergeddata.mergeddatasets = []
+        friends = {friend.name[len(mergeddata.name)+1:] : friend for friend in datasets[0].friends}
+        for friend in friends.values():
+            friend.GetEntries()
+            friend.mergeddatasets = []
         for dataset in datasets[1:]:
-            _data = self.get_data(dataset)
-            data.Add(_data)
-            data.mergeddatasets.append(_data)
-        return data
+            mergeddata.name += '_' + dataset.name
+            ds = self.get_data(dataset.name, addfriends = False)
+            mergeddata.Add(ds)
+            mergeddata.mergeddatasets.append(ds)
+            for friend in dataset.friends:
+                _name = friend.name[len(ds.name)+1:]
+                friends[_name].Add(friend)
+                friends[_name].mergeddatasets.append(friend)
+        for friend in friends.values():
+            mergeddata.AddFriend(friend)
+        return mergeddata
 
     def get_merged_dataset(self, name, *names, **kwargs):
         '''Get the total RooDataSet for all datasets matching the given regex names. 'kwargs' is passed to get_dataset,
