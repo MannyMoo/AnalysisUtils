@@ -251,11 +251,12 @@ class DataLibrary(object) :
             print 'Warning: skipping friends', _ignorefriends, 'of', name, 'due to different n. files'
         return ignorefriends + _ignorefriends
 
-    def get_data(self, name, ifile = None, iend = None, addfriends = True, ignorefriends = []) :
+    def get_data(self, name, ifile = None, iend = None, addfriends = True, ignorefriends = [], build = True) :
         '''Get the dataset of the given name. Optionally for one (ifile) or a range (ifile:iend) of files.
         If addfriends = False, friend trees aren't added.'''
         info = self.get_data_info(name)
-        tree = DataLibrary.DataChain(name, addfriends = addfriends, ignorefriends = ignorefriends, **info)
+        tree = DataLibrary.DataChain(name, addfriends = addfriends, ignorefriends = ignorefriends, 
+                                     build = build, **info)
         if None != ifile:
             tree = tree.get_subset(ifile, iend)
         return tree
