@@ -73,10 +73,11 @@ class DataLibrary(object) :
             else:
                 self.datasetdir = os.path.dirname(self.files[0])
 
+            super(DataLibrary.DataChain, self).__init__(tree)
+            # Option so it doesn't add files, do aliases, friends, etc, just caches the file info.
             if not build:
                 return
 
-            super(DataLibrary.DataChain, self).__init__(tree)
             for f in self.files:
                 self.Add(f)
 
