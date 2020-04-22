@@ -8,7 +8,7 @@ from AnalysisUtils.treeutils import make_chain, set_prefix_aliases, check_formul
 from array import array
 from copy import deepcopy
 from multiprocessing import Pool
-from AnalysisUtils.stringformula import NamedFormulae
+from AnalysisUtils.stringformula import NamedFormulae, StringFormula
 
 def _is_ok(tree, fout, selection):
     '''Check if a TTree has been copied OK to the output file.'''
@@ -193,6 +193,22 @@ class DataLibrary(object) :
                 return
             for info in self.GetListOfFriends():
                 info.GetTree().Show(n)
+
+        def draw(self, var, varY = None, nbins = None, nbinsY = None, name = None, suffix = '',
+                 selection = None, extrasel = None, opt = ''):
+            '''Make a histo of a variable or 2D histo of two variables. If this dataset has a 
+            default selection it's used if one isn't given.'''
+            if None == selection:
+                selection = self.selection
+            if extrasel:
+                selection = str(StringFormula(selection) & StringFormula(extrasel))
+            if varY:
+                h = self.variables.histo2D(var, varY, name = name, nbins = nbins, nbinsY = nbinsY, suffix = suffix)
+                self.Draw('{2} : {1} >> {0}'.format(h.GetName(), var, varY), selection, opt)
+            else:
+                h = self.variables.histo(var, name = name, nbins = nbins, suffix = suffix)
+                self.Draw('{1} >> {0}'.format(h.GetName(), var), selection, opt)
+            return h
 
         def __del__(self):
             '''Closes the TChain's file.'''

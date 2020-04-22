@@ -185,5 +185,5 @@ class NamedFormulae(dict):
     def histo2D(self, variable, variableY, name = None, nbins = None, nbinsY = None, suffix = '', 
                 htype = ROOT.TH2F):
         '''Make a 2D histo with variable on the x-axis and variableY on the y-axis.'''
-        return self[variable].histo2D(variableY, name = name, nbins = nbins, nbinsY = nbinsY,
+        return self[variable].histo2D(self[variableY], name = name, nbins = nbins, nbinsY = nbinsY,
                                       suffix = suffix, htype = htype)
