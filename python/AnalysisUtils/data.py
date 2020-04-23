@@ -199,9 +199,20 @@ class DataChain(ROOT.TChain):
         return DataChain(name = '{0}_{1}_{2}'.format(self.name, ifile, iend), tree = self.tree, files = files,
                          variables = self.variables, varnames = self.varnames, selection = self.selection,
                          datasetdir = self.datasetdir, ignorecompilefails = self.ignorecompilefails,
-                         aliases = self.aliases, friends = friends, addfriends = self.addfriends,
-                         ignorefriends = self.ignorefriends, sortfiles = False,
+                         aliases = self.aliases, friends = friends, addfriends = (addfriends and self.addfriends),
+                         ignorefriends = self.ignorefriends, sortfiles = self.sortfiles,
                          zombiewarning = self.zombiewarning, build = self.build)
+
+    def clone(self, addfriends = True, ignorefriends = [], ignoreperfile = False):
+        '''Get a clone of this DataChain.'''
+        args = self.__getstate__()
+        args['ignorefriends'] = self.get_ignorefriends_perfile(self.ignorefriends + ignorefriends,
+                                                               not ignoreperfile)
+        args['addfriends'] = self.addfriends and addfriends
+        return DataChain(**args)
+
+    def __eq__(self, other):
+        return self.__dict__ == other.__dict__
 
     def Show(self, n):
         '''Show the contents of entry n, also for friend trees.'''
