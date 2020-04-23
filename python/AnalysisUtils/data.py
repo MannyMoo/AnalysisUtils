@@ -196,10 +196,12 @@ class DataChain(ROOT.TChain):
         if None == iend:
             iend = ifile+1
         files = self.files[ifile:iend]
-        return DataChain('{0}_{1}_{2}'.format(self.name, ifile, iend), self.tree, files,
-                         self.variables, self.varnames, self.selection, self.datasetdir,
-                         self.ignorecompilefails, self.aliases, friends, False,
-                         sortfiles = False)
+        return DataChain(name = '{0}_{1}_{2}'.format(self.name, ifile, iend), tree = self.tree, files = files,
+                         variables = self.variables, varnames = self.varnames, selection = self.selection,
+                         datasetdir = self.datasetdir, ignorecompilefails = self.ignorecompilefails,
+                         aliases = self.aliases, friends = friends, addfriends = self.addfriends,
+                         ignorefriends = self.ignorefriends, sortfiles = False,
+                         zombiewarning = self.zombiewarning, build = self.build)
 
     def Show(self, n):
         '''Show the contents of entry n, also for friend trees.'''
@@ -273,7 +275,7 @@ class DataChain(ROOT.TChain):
                     print 'File', f, 'appears', fcount, 'times'
 
         branchnames = []
-        for f in info['files'] :
+        for f in self.files :
             tf = ROOT.TFile.Open(f)
             # Check file can be opened.
             if not tf :
@@ -375,7 +377,8 @@ class DataChain(ROOT.TChain):
 
     def __reduce__(self):
         '''Reduce method for pickling.'''
-        return (DataChain, tuple(getattr(self, attr) for attr in self._ctorargs))
+        return (DataChain, tuple(getattr(self, ('initfriends' if attr == 'friends' else attr))\
+                                 for attr in self._ctorargs))
 
     def __reduce_ex__(self, i):
         '''Reduce method for pickling.'''
