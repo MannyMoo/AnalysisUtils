@@ -23,17 +23,366 @@ def _is_ok(tree, fout, selection):
         return False
     return True
 
-def _parallel_filter(datalib, dataset, ifile, selection, outputdir, outputname, nthreads,
+def _parallel_filter(tree, ifile, iend, selection, outputdir, outputname, nthreads,
                      zfill, overwrite, ignorefriends):
     '''Filter a single file from a TChain.'''
-    fout = os.path.join(outputdir, outputname + '_{0}.root')
-    fout = fout.format(str(ifile).zfill(zfill))
-    tree = datalib.get_data(dataset, ifile, ignorefriends = ignorefriends)
+    fout = os.path.join(outputdir, outputname + '_{0}_{1}.root')
+    fout = fout.format(str(ifile).zfill(zfill), str(iend).zfill(zfill))
+    tree = tree.get_subset(ifile, iend, ignorefriends = ignorefriends)
     if not overwrite and _is_ok(tree, fout, selection):
         return True
     cptree = copy_tree(tree = tree, selection = selection,
                        fname = fout, write = True)
     return bool(cptree)
+
+class DataChain(ROOT.TChain):
+    '''Wrapper for TChain to add useful functionality, also makes sure that its file gets closed
+    when it's deleted.'''
+
+    _ctorargs = ('name', 'tree', 'files', 'variables', 'varnames', 'selection',
+                 'datasetdir', 'ignorecompilefails', 'aliases', 'friends', 'addfriends',
+                 'ignorefriends', 'sortfiles', 'zombiewarning', 'build')
+
+    def __init__(self, name, tree, files, variables = {}, varnames = (), selection = '',
+                 datasetdir = None, ignorecompilefails = False, aliases = {},
+                 friends = [], addfriends = True, ignorefriends = [], sortfiles = True,
+                 zombiewarning = True, build = True) :
+        self.name = name
+        self.tree = tree
+        if sortfiles:
+            self.files = sorted(files)
+        else:
+            self.files = list(files)
+        if not self.files:
+            raise VauleError('ERROR constructing DataChain {0}: no files given!'.format(self.name))
+        self.variables = NamedFormulae(variables)
+        self.varnames = varnames
+        self.selection = selection
+        self.ignorecompilefails = ignorecompilefails
+        self.aliases = aliases
+        self.friends = []
+        if datasetdir:
+            self.datasetdir = datasetdir
+        else:
+            self.datasetdir = os.path.dirname(self.files[0])
+        self.initfriends = friends
+        self.addfriends = addfriends
+        self.ignorefriends = ignorefriends
+        self.sortfiles = sortfiles
+        self.zombiewarning = zombiewarning
+        self.build = build
+
+        super(DataChain, self).__init__(tree)
+        # Option so it doesn't add files, do aliases, friends, etc, just caches the file info.
+        self.built = False
+        if not build:
+            return
+        self._build()
+
+    def _build(self):
+        '''Add the files, set aliases, add friends.'''
+        if self.built:
+            return
+
+        for f in self.files:
+            self.Add(f)
+
+        for varname, varinfo in self.variables.items():
+            self.SetAlias(varname, varinfo['formula'])
+        if self.is_ok(self.zombiewarning):
+            set_prefix_aliases(self, self.aliases)
+
+        if not self.addfriends:
+            self.built = True
+            return
+
+        friends = filter(lambda chain : chain.name not in self.ignorefriends, self.initfriends)
+        friends += self.get_auto_friends(self.ignorefriends)
+        for friend in friends:
+            self.AddFriend(friend)
+        self.built = True
+
+    def __del__(self):
+        '''Closes the TChain's file.'''
+        #print 'Del', self.name
+        if self.GetFile():
+            #print 'Close file', self.GetFile().GetName()
+            self.GetFile().Close()
+
+    def AddFriend(self, friend, alias = '', warn = False):
+        '''Add a friend tree.'''
+        super(DataChain, self).AddFriend(friend, alias, warn)
+        self.friends.append(friend)
+
+    def is_ok(self, warning = True):
+        '''Check if we can load the first entry in the chain.'''
+        result = self.LoadTree(0)
+        if result >= 0:
+            return True
+        if warning:
+            print >> sys.stderr, 'ERROR: DataChain.is_ok: dataset', self.name,\
+                'is a zombie! (error {0})'.format(result)
+        return False
+
+    def friends_directory(self):
+        '''Get the directory containing friends that will be automatically loaded.'''
+        return os.path.join(self.datasetdir, self.name + '_Friends')
+
+    def _ignore(self, friendname, ignorefriends):
+        return friendname in ignorefriends or self.name + '_' + friendname in ignorefriends
+
+    def get_auto_friends(self, ignorefriends = [], build = True):
+        '''Get friend trees from from the friends directory to be added.'''
+        friendsdir = self.friends_directory()
+        if not os.path.exists(friendsdir):
+            return []
+        friends = []
+        for friendname in os.listdir(friendsdir):
+            if self._ignore(friendname, ignorefriends):
+                continue
+            files = glob.glob(os.path.join(friendsdir, friendname, '*.root'))
+            if not files :
+                continue
+            fname = os.path.split(files[0])[1]
+            # Take the name of the file as the name of the TTree
+            treename = fname[:-len('.root')]
+            # Check if the file ends with __[0-9]+__, in which case remove it.
+            search = re.search('__[0-9]+\__.root$', fname)
+            if search:
+                treename = treename[:search.start()]
+            friendname = self.name + '_' + friendname
+            friend = DataChain(friendname, treename, files, variables = self.variables,
+                               aliases = self.aliases, ignorefriends = ignorefriends,
+                               build = build)
+            # False as it will have already given a warning from the constructor.
+            if friend.is_ok(False):
+                friends.append(friend)
+        return friends
+
+    def friend_file_name(self, friendname, treename, number = None, makedir = False, zfill = 4) :
+        '''Get the name of a file that will be automatically added as a friend to this dataset,
+        optionally with a number. 'treename' is the name of the TTree it's expected to contain.
+        If makedir = True then the directory to hold the file is created.'''
+        if None != number :
+            fname = treename + '__' + str(number).zfill(zfill) + '__.root'
+        else :
+            fname = treename + '.root'
+        dirname = os.path.join(self.friends_directory(), friendname)
+        if makedir and not os.path.exists(dirname) :
+            os.makedirs(dirname)
+        return os.path.join(dirname, fname)
+
+    def get_ignorefriends_perfile(self, ignorefriends = [], warning = True):
+        '''Get friends that should be ignored for per-file operations as they have different n. files.'''
+        ignores = []
+        for friend in self.friends:
+            if self._ignore(friend.name, ignorefriends):
+                continue
+            if len(friend.files) != len(self.files):
+                ignores.append(friend.name)
+        if ignores and warning:
+            print 'Warning: skipping friends', ignores, 'of', self.name, 'due to different n. files'
+        return ignorefriends + ignores
+
+    def get_subset(self, ifile, iend = None, addfriends = True, ignorefriends = [], ignoreperfile = False):
+        '''Get a subset of the chain using a given file index or range of files.'''
+        ignorefriends = self.get_ignorefriends_perfile(ignorefriends, not ignoreperfile)
+        friends = []
+        if addfriends:
+            for friend in self.friends:
+                if self._ignore(friend.name, ignorefriends):
+                    continue
+                friends.append(friend.get_subset(ifile, iend, addfriends, ignorefriends, ignoreperfile))
+        if None == iend:
+            iend = ifile+1
+        files = self.files[ifile:iend]
+        return DataChain('{0}_{1}_{2}'.format(self.name, ifile, iend), self.tree, files,
+                         self.variables, self.varnames, self.selection, self.datasetdir,
+                         self.ignorecompilefails, self.aliases, friends, False,
+                         sortfiles = False)
+
+    def Show(self, n):
+        '''Show the contents of entry n, also for friend trees.'''
+        super(DataChain, self).Show(n)
+        if not self.GetListOfFriends():
+            return
+        for info in self.GetListOfFriends():
+            info.GetTree().Show(n)
+
+    def draw(self, var, varY = None, nbins = None, nbinsY = None, name = None, suffix = '',
+             selection = None, extrasel = None, opt = ''):
+        '''Make a histo of a variable or 2D histo of two variables. If this dataset has a 
+        default selection it's used if one isn't given.'''
+        if None == selection:
+            selection = self.selection
+        if extrasel:
+            selection = str(StringFormula(selection) & StringFormula(extrasel))
+        if varY:
+            h = self.variables.histo2D(var, varY, name = name, nbins = nbins, nbinsY = nbinsY, suffix = suffix)
+            self.Draw('{2} : {1} >> {0}'.format(h.GetName(), var, varY), selection, opt)
+        else:
+            h = self.variables.histo(var, name = name, nbins = nbins, suffix = suffix)
+            self.Draw('{1} >> {0}'.format(h.GetName(), var), selection, opt)
+        return h
+
+    def dataset_file_name(self, suffix = ''):
+        '''Get the name of the file containing the RooDataset, optionally with the given suffix.'''
+        return os.path.join(self.datasetdir, self.name + suffix + '_Dataset.root')
+
+    def add_friend_tree(self, friendname, adderkwargs, treename = None, perfile = False,
+                        makedir = True, zfill = 4):
+        '''Add a friend tree to the given dataset.
+        friendname = name of the friend dataset
+        adderkwargs = list of dicts to be passed as arguments to TreeBranchAdder instances (excluding
+          the tree argument)
+        treename = name of the friend TTree (default friendname + 'Tree')
+        makedir & zfill are passed to frield_file_name.'''
+        if None == treename:
+            treename = friendname + 'Tree'
+        fout = ROOT.TFile.Open(self.friend_file_name(friendname, treename,
+                                                     makedir = makedir, zfill = zfill), 'recreate')
+        treeout = ROOT.TTree(treename, treename)
+        adders = [TreeBranchAdder(treeout, **kwargs) for kwargs in adderkwargs]
+        for i in tree_loop(self):
+            for adder in adders:
+                adder.set_value()
+            treeout.Fill()
+        treeout.Write()
+        fout.Close()
+
+    def selected_file_name(self, makedir = False, suffix = '') :
+        '''Get the name of the file containing the TTree of range and selection
+        variables created when making the RooDataSet.'''
+        return self.friend_file_name('SelectedTree' + suffix, 'SelectedTree' + suffix,
+                                     makedir = makedir)
+
+    def check_consistency(self):
+        '''Check that all files exist, are unique, contain the required TTree, and all the TTrees have 
+        the same branches.'''
+        success = True
+
+        print 'Check dataset', self.name, 'for consistency'
+        # Check files are unique
+        filesset = set(self.files)
+        if len(self.files) != len(filesset) :
+            print 'Some files are duplicated'
+            success = False
+            for f in filesset :
+                fcount = info['files'].count(f)
+                if fcount != 1 :
+                    print 'File', f, 'appears', fcount, 'times'
+
+        branchnames = []
+        for f in info['files'] :
+            tf = ROOT.TFile.Open(f)
+            # Check file can be opened.
+            if not tf :
+                print 'File', f, "can't be opened!"
+                success = False
+                continue
+            if tf.IsZombie() :
+                print 'File', f, "can't be opened!"
+                success = False
+                continue
+            # Check it contains the TTree.
+            tree = tf.Get(self.tree)
+            if not tree :
+                print 'File', f, "doesn't contain a TTree named", repr(self.tree)
+                success = False
+                tf.Close()
+                continue
+            # Check it has the same branches as the other TTrees.
+            if not branchnames :
+                branchnames = set(br.GetName() for br in tree.GetListOfBranches())
+            thesenames = set(br.GetName() for br in tree.GetListOfBranches())
+            if branchnames != thesenames :
+                print 'Branches in file', f, "don't match the first TTree:"
+                print 'Branches in this TTree not in the first TTree:', thesenames.difference(branchnames)
+                print 'Branches in the first TTree not in this TTree:', branchnames.difference(thesenames)
+                success = False
+            tf.Close()
+        for friend in self.friends:
+            if friend.GetEntries() != self.GetEntries():
+                success = False
+                print 'Friend', friend.name, 'has the wrong number of entries:', friend.GetEntries(),\
+                    'should be', self.GetEntries()
+        for friend in self.friends:
+            friendsuccess = friend.check_consistency()
+            success = friendsuccess and success
+        return success
+
+    def parallel_filter(self, outputdir, outputname, selection = None,
+                        nthreads = multiprocessing.cpu_count(), zfill = None, overwrite = True,
+                        ignorefriends = [], noutputfiles = None):
+        '''Filter a dataset with the given selection and save output to the outputdir/outputname/.'''
+        outputdir = os.path.join(outputdir, outputname)
+        if not os.path.exists(outputdir):
+            os.makedirs(outputdir)
+        if None == selection:
+            selection = self.selection
+
+        # Do each file individually in parallel.
+        pool = Pool(processes = nthreads)
+        nfiles = self.nfiles()
+        if None == zfill:
+            zfill = len(str(nfiles))
+        procs = []
+        if None == noutputfiles:
+            noutputfiles = nfiles
+        nper = int(nfiles/noutputfiles)
+        ranges =[[i*nper, (i+1)*nper] for i in xrange(noutputfiles)]
+        ranges[-1][-1] = nfiles
+        kwargslist = []
+        for ifile, iend in ranges:
+            kwargs = dict(tree = self, selection = selection,
+                          outputdir = outputdir, outputname = outputname, 
+                          nthreads = nthreads, zfill = zfill, ifile = ifile, iend = iend,
+                          overwrite = overwrite, ignorefriends = ignorefriends)
+            kwargslist.append(kwargs)
+
+        # for kwargs in kwargslist:
+        #     apply(_parallel_filter, (), kwargs)
+        # return True
+
+        for kwargs in kwargslist:
+            proc = pool.apply_async(_parallel_filter, 
+                                    kwds = kwargs)
+            procs.append(proc)
+        success = True
+        for proc in procs:
+            proc.wait()
+        for proc in procs:
+            procsuccess = proc.successful()
+            success = success and procsuccess
+            if not procsuccess:
+                proc.get()
+        return success
+
+    def filter(self, outputdir, outputname, selection = None, overwrite = True, ignorefriends = []):
+        '''Filter a dataset with the given selection and save output to the outputdir/outputname/.'''
+        return self.parallel_filter(outputdir, outputname, selection, nthreads = 1, noutputfiles = 1,
+                                    overwrite = overwrite, ignorefriends = ignorefriends)
+
+    def __getstate__(self):
+        '''Get state for pickling.'''
+        state = {attr : getattr(self, attr) for attr in self._ctorargs}
+        state['friends'] = self.initfriends
+        return state
+
+    def __setstate__(self, state):
+        '''Set state for unpickling.'''
+        self.__init__(**state)
+
+    def __reduce__(self):
+        '''Reduce method for pickling.'''
+        return (DataChain, tuple(getattr(self, attr) for attr in self._ctorargs))
+
+    def __reduce_ex__(self, i):
+        '''Reduce method for pickling.'''
+        return self.__reduce__()
+
+    def nfiles(self):
+        return len(self.files)
 
 class DataLibrary(object) :
     '''Contains info on datasets and functions to retrieve them.'''
@@ -47,180 +396,6 @@ class DataLibrary(object) :
         def __call__(self) :
             return self.method(*self.args)
 
-    class DataChain(ROOT.TChain):
-        '''Wrapper for TChain to make sure that its file gets closed when it's deleted.'''
-
-        def __init__(self, name, tree, files, variables = {}, varnames = (), selection = '',
-                     datasetdir = None, ignorecompilefails = False, aliases = {},
-                     friends = [], addfriends = True, ignorefriends = [], sortfiles = True,
-                     zombiewarning = True, build = True) :
-            self.name = name
-            self.tree = tree
-            if sortfiles:
-                self.files = sorted(files)
-            else:
-                self.files = list(files)
-            if not self.files:
-                raise VauleError('ERROR constructing DataChain {0}: no files given!'.format(self.name))
-            self.variables = NamedFormulae(variables)
-            self.varnames = varnames
-            self.selection = selection
-            self.ignorecompilefails = ignorecompilefails
-            self.aliases = aliases
-            self.friends = []
-            if datasetdir:
-                self.datasetdir = datasetdir
-            else:
-                self.datasetdir = os.path.dirname(self.files[0])
-
-            super(DataLibrary.DataChain, self).__init__(tree)
-            # Option so it doesn't add files, do aliases, friends, etc, just caches the file info.
-            if not build:
-                return
-
-            for f in self.files:
-                self.Add(f)
-
-            for varname, varinfo in self.variables.items():
-                self.SetAlias(varname, varinfo['formula'])
-            if self.is_ok(zombiewarning):
-                set_prefix_aliases(self, self.aliases)
-
-            if not addfriends:
-                return
-
-            friends = filter(lambda chain : chain.name not in ignorefriends, friends)
-            friends += self.get_auto_friends(ignorefriends)
-            for friend in friends:
-                self.AddFriend(friend)
-
-        def AddFriend(self, friend, alias = '', warn = False):
-            '''Add a friend tree.'''
-            super(DataLibrary.DataChain, self).AddFriend(friend, alias, warn)
-            self.friends.append(friend)
-
-        def is_ok(self, warning = True):
-            '''Check if we can load the first entry in the chain.'''
-            result = self.LoadTree(0)
-            if result >= 0:
-                return True
-            if warning:
-                print >> sys.stderr, 'ERROR: DataLibrary.DataChain.is_ok: dataset', self.name,\
-                    'is a zombie! (error {0})'.format(result)
-            return False
-
-        def friends_directory(self):
-            '''Get the directory containing friends that will be automatically loaded.'''
-            return os.path.join(self.datasetdir, self.name + '_Friends')
-
-        def _ignore(self, friendname, ignorefriends):
-            return friendname in ignorefriends or self.name + '_' + friendname in ignorefriends
-
-        def get_auto_friends(self, ignorefriends = [], build = True):
-            '''Get friend trees from from the friends directory to be added.'''
-            friendsdir = self.friends_directory()
-            if not os.path.exists(friendsdir):
-                return []
-            friends = []
-            for friendname in os.listdir(friendsdir):
-                if self._ignore(friendname, ignorefriends):
-                    continue
-                files = glob.glob(os.path.join(friendsdir, friendname, '*.root'))
-                if not files :
-                    continue
-                fname = os.path.split(files[0])[1]
-                # Take the name of the file as the name of the TTree
-                treename = fname[:-len('.root')]
-                # Check if the file ends with __[0-9]+__, in which case remove it.
-                search = re.search('__[0-9]+\__.root$', fname)
-                if search:
-                    treename = treename[:search.start()]
-                friendname = self.name + '_' + friendname
-                friend = DataLibrary.DataChain(friendname, treename, files, variables = self.variables,
-                                               aliases = self.aliases, ignorefriends = ignorefriends,
-                                               build = build)
-                # False as it will have already given a warning from the constructor.
-                if friend.is_ok(False):
-                    friends.append(friend)
-            return friends
-
-        def friend_file_name(self, friendname, treename, number = None, makedir = False, zfill = 4) :
-            '''Get the name of a file that will be automatically added as a friend to this dataset,
-            optionally with a number. 'treename' is the name of the TTree it's expected to contain.
-            If makedir = True then the directory to hold the file is created.'''
-            if None != number :
-                fname = treename + '__' + str(number).zfill(zfill) + '__.root'
-            else :
-                fname = treename + '.root'
-            dirname = os.path.join(self.friends_directory(), friendname)
-            if makedir and not os.path.exists(dirname) :
-                os.makedirs(dirname)
-            return os.path.join(dirname, fname)
-
-        def get_ignorefriends_perfile(self, ignorefriends = [], warning = True):
-            '''Get friends that should be ignored for per-file operations as they have different n. files.'''
-            ignores = []
-            for friend in self.friends:
-                if self._ignore(friend.name, ignorefriends):
-                    continue
-                if len(friend.files) != len(self.files):
-                    ignores.append(friend.name)
-            if warning:
-                print 'Warning: skipping friends', ignores, 'of', self.name, 'due to different n. files'
-            return ignorefriends + ignores
-
-        def get_subset(self, ifile, iend = None, addfriends = True, ignorefriends = [], ignoreperfile = False):
-            '''Get a subset of the chain using a given file index or range of files.'''
-            ignorefriends = self.get_ignorefriends_perfile(ignorefriends, not ignoreperfile)
-            friends = []
-            if addfriends:
-                for friend in self.friends:
-                    if self._ignore(friend.name, ignorefriends):
-                        continue
-                    friends.append(friend.get_subset(ifile, iend, addfriends, ignorefriends, ignoreperfile))
-            if None == iend:
-                iend = ifile+1
-            files = self.files[ifile:iend]
-            return DataLibrary.DataChain('{0}_{1}_{2}'.join(self.name, ifile, iend), self.tree, files,
-                                         self.variables, self.varnames, self.selection, self.datasetdir,
-                                         self.ignorecompilefails, self.aliases, friends, False,
-                                         sortfiles = False)
-
-        def Show(self, n):
-            '''Show the contents of entry n, also for friend trees.'''
-            super(DataLibrary.DataChain, self).Show(n)
-            if not self.GetListOfFriends():
-                return
-            for info in self.GetListOfFriends():
-                info.GetTree().Show(n)
-
-        def draw(self, var, varY = None, nbins = None, nbinsY = None, name = None, suffix = '',
-                 selection = None, extrasel = None, opt = ''):
-            '''Make a histo of a variable or 2D histo of two variables. If this dataset has a 
-            default selection it's used if one isn't given.'''
-            if None == selection:
-                selection = self.selection
-            if extrasel:
-                selection = str(StringFormula(selection) & StringFormula(extrasel))
-            if varY:
-                h = self.variables.histo2D(var, varY, name = name, nbins = nbins, nbinsY = nbinsY, suffix = suffix)
-                self.Draw('{2} : {1} >> {0}'.format(h.GetName(), var, varY), selection, opt)
-            else:
-                h = self.variables.histo(var, name = name, nbins = nbins, suffix = suffix)
-                self.Draw('{1} >> {0}'.format(h.GetName(), var), selection, opt)
-            return h
-
-        def __del__(self):
-            '''Closes the TChain's file.'''
-            #print 'Del', self.name
-            if self.GetFile():
-                #print 'Close file', self.GetFile().GetName()
-                self.GetFile().Close()
-
-        def dataset_file_name(self, suffix = ''):
-            '''Get the name of the file containing the RooDataset, optionally with the given suffix.'''
-            return os.path.join(self.datasetdir, self.name + suffix + '_Dataset.root')
-
     def __init__(self, datapaths, variables, ignorecompilefails = False, selection = '', varnames = (),
                  aliases = {}) :
         self.datapaths = {}
@@ -233,7 +408,8 @@ class DataLibrary(object) :
 
     def __getstate__(self):
         '''Get state for pickling.'''
-        return {attr : getattr(self, attr) for attr in ('datapaths', 'variables', 'ignorecompilefails', 'selection', 'varnames')}
+        return {attr : getattr(self, attr) for attr in ('datapaths', 'variables', 'ignorecompilefails',
+                                                        'selection', 'varnames', 'aliases')}
 
     def __setstate__(self, state):
         '''Set state for unpickling.'''
@@ -266,8 +442,8 @@ class DataLibrary(object) :
         '''Get the dataset of the given name. Optionally for one (ifile) or a range (ifile:iend) of files.
         If addfriends = False, friend trees aren't added.'''
         info = self.get_data_info(name)
-        tree = DataLibrary.DataChain(name, addfriends = addfriends, ignorefriends = ignorefriends, 
-                                     build = build, **info)
+        tree = DataChain(name, addfriends = addfriends, ignorefriends = ignorefriends, 
+                         build = build, **info)
         if None != ifile:
             tree = tree.get_subset(ifile, iend)
         return tree
@@ -307,25 +483,14 @@ class DataLibrary(object) :
           the tree argument)
         treename = name of the friend TTree (default friendname + 'Tree')
         makedir & zfill are passed to frield_file_name.'''
-        if None == treename:
-            treename = friendname + 'Tree'
-        fout = ROOT.TFile.Open(self.friend_file_name(dataname, friendname, treename,
-                                                     makedir = makedir, zfill = zfill), 'recreate')
-        treeout = ROOT.TTree(treename, treename)
-        adders = [TreeBranchAdder(treeout, **kwargs) for kwargs in adderkwargs]
         if None == tree:
             tree = self.get_data(dataname)
-        for i in tree_loop(tree):
-            for adder in adders:
-                adder.set_value()
-            treeout.Fill()
-        treeout.Write()
-        fout.Close()
+        tree.add_friend_tree(friendname, adderkwargs, treename, perfile, makedir, zfill)
 
     def selected_file_name(self, dataname, makedir = False, suffix = '') :
         '''Get the name of the file containing the TTree of range and selection
         variables created when making the RooDataSet.'''
-        return self.friend_file_name(dataname, 'SelectedTree' + suffix, 'SelectedTree' + suffix, makedir = makedir)
+        return self.get_data(dataname, build = False).selected_file_name(makedir = makedir, suffix = suffix)
 
     def retrieve_dataset(self, dataname, varnames, suffix = '', selection = '') :
         '''Retrieve a previously saved RooDataSet for the given dataset and check that it contains
@@ -472,49 +637,7 @@ class DataLibrary(object) :
     def check_dataset(self, name) :
         '''Check that all files exist, are unique, contain the required TTree, and all the TTrees have 
         the same branches.'''
-        info = self.get_data_info(name)
-        success = True
-
-        # Check files are unique
-        filesset = set(info['files'])
-        if len(info['files']) != len(filesset) :
-            print 'Some files are duplicated'
-            success = False
-            for f in filesset :
-                fcount = info['files'].count(f)
-                if fcount != 1 :
-                    print 'File', f, 'appears', fcount, 'times'
-
-        branchnames = []
-        for f in info['files'] :
-            tf = ROOT.TFile.Open(f)
-            # Check file can be opened.
-            if not tf :
-                print 'File', f, "can't be opened!"
-                success = False
-                continue
-            if tf.IsZombie() :
-                print 'File', f, "can't be opened!"
-                success = False
-                continue
-            # Check it contains the TTree.
-            tree = tf.Get(info['tree'])
-            if not tree :
-                print 'File', f, "doesn't contain a TTree named", repr(info['tree'])
-                success = False
-                tf.Close()
-                continue
-            # Check it has the same branches as the other TTrees.
-            if not branchnames :
-                branchnames = set(br.GetName() for br in tree.GetListOfBranches())
-            thesenames = set(br.GetName() for br in tree.GetListOfBranches())
-            if branchnames != thesenames :
-                print 'Branches in file', f, "don't match the first TTree:"
-                print 'Branches in this TTree not in the first TTree:', thesenames.difference(branchnames)
-                print 'Branches in the first TTree not in this TTree:', branchnames.difference(thesenames)
-                success = False
-            tf.Close()
-        return success
+        return self.get_data(name).check_consistency()
 
     def check_all_datasets(self) :
         '''Check all datasets for integrity. Returns a list of OK datasets, and a list of
@@ -538,49 +661,6 @@ class DataLibrary(object) :
         for name in datapaths :
             setattr(self, name, DataLibrary.DataGetter(self.get_data, name))
             setattr(self, name + '_Dataset', DataLibrary.DataGetter(self.get_dataset, name))
-
-    def _form_and_range(self, tree, variable, xmin, xmax) :
-        '''Get the variable formula and range if it's in the dict of variables.'''
-        variables = tree.variables
-        if variable in variables :
-            form = variables[variable]['formula']
-            xmin = xmin if xmin != None else variables[variable]['xmin']
-            xmax = xmax if xmax != None else variables[variable]['xmax']
-        else :
-            form = variable
-            if xmin == None or xmax == None :
-                raise ValueError('Must give xmin and xmax for variables not in the known variables!')
-        return form, xmin, xmax
-
-    def draw(self, tree, variable, hname = None, nbins = None, xmin = None, xmax = None, selection = None,
-             variableY = None, nbinsY = None, ymin = None, ymax = None, drawopt = '') :
-        '''Make a histogram of a variable. If 'tree' is a string, the dataset with the corresponding name
-        is retrieved, else it's expected to be a TTree. If 'variable' is the name of a variable in the internal
-        dict of variables, then its formula is taken from there, else it's expected to be a formula understood
-        by the TTree. Similarly for xmin & xmax. Default nbins is 100. The default selection is the internal
-        selection given to the constructor.'''
-
-        if isinstance(tree, str) :
-            tree = self.get_data(tree)
-        nbins = nbins if nbins else 100
-        if not hname :
-            if variableY :
-                hname = variableY + '_vs_' + variable
-            else :
-                hname = variable
-        if not selection :
-            selection = tree.selection
-        form, xmin, xmax = self._form_and_range(tree, variable, xmin, xmax)
-        if not variableY :
-            h = ROOT.TH1F(hname, '', nbins, xmin, xmax)
-            tree.Draw('{form} >> {hname}'.format(**locals()), selection, drawopt)
-            return h
-        formY, ymin, ymax = self._form_and_range(tree, variableY, ymin, ymax)
-        if None == nbinsY :
-            nbinsY = nbins
-        h = ROOT.TH2F(hname, '', nbins, xmin, xmax, nbinsY, ymin, ymax)
-        tree.Draw('{formY} : {form} >> {hname}'.format(**locals()), selection, drawopt)
-        return h
 
     def parallel_filter_data(self, dataset, selection, outputdir, outputname,
                              nthreads = multiprocessing.cpu_count(), zfill = None, overwrite = True, ignorefriends = []):
