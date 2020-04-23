@@ -217,6 +217,10 @@ class DataLibrary(object) :
                 #print 'Close file', self.GetFile().GetName()
                 self.GetFile().Close()
 
+        def dataset_file_name(self, suffix = ''):
+            '''Get the name of the file containing the RooDataset, optionally with the given suffix.'''
+            return os.path.join(self.datasetdir, self.name + suffix + '_Dataset.root')
+
     def __init__(self, datapaths, variables, ignorecompilefails = False, selection = '', varnames = (),
                  aliases = {}) :
         self.datapaths = {}
@@ -256,17 +260,7 @@ class DataLibrary(object) :
 
     def get_ignorefriends_perfile(self, name, ignorefriends = [], warning = True):
         '''Get the names of friend trees that should be ignored for perfile operations.'''
-        ignorefriends = self.correct_friend_names(name, *ignorefriends)
-        info = self.get_data_info(name, ignorefriends = ignorefriends)
-        _ignorefriends = []
-        for friend in info.get('friends', []) :
-            if friend in ignorefriends:
-                continue
-            if len(self.get_data_info(friend)['files']) != len(info['files']):
-                _ignorefriends.append(friend)
-        if warning:
-            print 'Warning: skipping friends', _ignorefriends, 'of', name, 'due to different n. files'
-        return ignorefriends + _ignorefriends
+        return self.get_data(name).get_ignorefriends_perfile(ignorefriends, warning)
 
     def get_data(self, name, ifile = None, iend = None, addfriends = True, ignorefriends = [], build = True) :
         '''Get the dataset of the given name. Optionally for one (ifile) or a range (ifile:iend) of files.
@@ -293,11 +287,11 @@ class DataLibrary(object) :
     def dataset_file_name(self, dataname, suffix = '') :
         '''Get the name of the file containing the RooDataset corresponding to the given
         dataset name.'''
-        return os.path.join(self.dataset_dir(dataname), dataname + suffix + '_Dataset.root')
+        return self.get_data(dataname, build = False).dataset_file_name(suffix)
 
     def friends_directory(self, dataname) :
         '''Get the directory containing friends of this dataset that will be automatically loaded.'''
-        return os.path.join(self.dataset_dir(dataname), dataname + '_Friends')
+        return self.get_data(dataname, build = False).friends_directory()
 
     def friend_file_name(self, dataname, friendname, treename, number = None, makedir = False, zfill = 4) :
         '''Get the name of a file that will be automatically added as a friend to the given dataset,
@@ -349,7 +343,7 @@ class DataLibrary(object) :
             fout.Close()
             return
         if self.ignorecompilefails :
-            variables = self._variables(tree)
+            variables = tree.variables
             checkvarnames = filter(lambda name : check_formula_compiles(variables[name]['formula'],
                                                                         tree),
                                    varnames)
@@ -374,9 +368,9 @@ class DataLibrary(object) :
         RooDataSet will be recreated.'''
 
         tree = self.get_data(dataname, ignorefriends = ['SelectedTree' + suffix])
-        variables = self._variables(tree)
+        variables = tree.variables
         if None == selection:
-            selection = self._selection(tree)
+            selection = tree.selection
 
         if not varnames :
             varnames = self.varnames
@@ -547,7 +541,7 @@ class DataLibrary(object) :
 
     def _form_and_range(self, tree, variable, xmin, xmax) :
         '''Get the variable formula and range if it's in the dict of variables.'''
-        variables = self._variables(tree)
+        variables = tree.variables
         if variable in variables :
             form = variables[variable]['formula']
             xmin = xmin if xmin != None else variables[variable]['xmin']
@@ -575,7 +569,7 @@ class DataLibrary(object) :
             else :
                 hname = variable
         if not selection :
-            selection = self._selection(tree)
+            selection = tree.selection
         form, xmin, xmax = self._form_and_range(tree, variable, xmin, xmax)
         if not variableY :
             h = ROOT.TH1F(hname, '', nbins, xmin, xmax)
