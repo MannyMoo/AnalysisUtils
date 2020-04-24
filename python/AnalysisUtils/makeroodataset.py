@@ -18,7 +18,8 @@ class TreeVar(NamedFormula) :
         a float.
         xmin & xmax: the range of the RooRealVar.'''
 
-        NamedFormula.__init__(name, title, formula, xmin, xmax, unit, discrete)
+        NamedFormula.__init__(self, name = name, title = title, formula = formula, xmin = xmin, xmax = xmax, 
+                              unit = unit, discrete = discrete)
         if not discrete :
             self.var = ROOT.RooRealVar(name, title, xmin + (xmax-xmin)/2., xmin, xmax, unit)
             self._set = self.var.setVal
