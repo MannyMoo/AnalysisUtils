@@ -9,6 +9,7 @@ from array import array
 from copy import deepcopy
 from multiprocessing import Pool
 from AnalysisUtils.stringformula import NamedFormulae, StringFormula
+from AnalysisUtils.datacache import DataCache
 
 def _is_ok(tree, fout, selection):
     '''Check if a TTree has been copied OK to the output file.'''
@@ -203,12 +204,14 @@ class DataChain(ROOT.TChain):
                          ignorefriends = self.ignorefriends, sortfiles = self.sortfiles,
                          zombiewarning = self.zombiewarning, build = self.build)
 
-    def clone(self, addfriends = True, ignorefriends = [], ignoreperfile = False):
-        '''Get a clone of this DataChain.'''
+    def clone(self, ignoreperfile = False, suffix = '', **kwargs):
+        '''Get a clone of this DataChain. kwargs can be any that're given to the DataChain constructor,
+        which will override the current values.'''
         args = self.__getstate__()
-        args['ignorefriends'] = self.get_ignorefriends_perfile(self.ignorefriends + ignorefriends,
-                                                               not ignoreperfile)
-        args['addfriends'] = self.addfriends and addfriends
+        args.update(kwargs)
+        args['name'] += suffix
+        if ignoreperfile:
+            args['ignorefriends'] = self.get_ignorefriends_perfile(args['ignorefriends'], False)
         return DataChain(**args)
 
     def __eq__(self, other):
@@ -397,6 +400,33 @@ class DataChain(ROOT.TChain):
 
     def nfiles(self):
         return len(self.files)
+
+    def dataset_name(self):
+        return self.name + '_Dataset'
+
+    def _make_dataset(self):
+        '''Make the RooDataset.'''
+        selectedtreefile = self.selected_file_name(True)
+        return make_roodataset(self.dataset_name(), self.dataset_name(), self, 
+                               ignorecompilefails = self.ignorecompilefails,
+                               selection = self.selection, selectedtreefile = selectedtreefile,
+                               selectedtreename = 'SelectedTree',
+                               **dict((var, self.variables[var]) for var in self.varnames))
+
+    def dataset_cache(self, update = False, suffix = '', **kwargs):
+        '''Get the DataCache for the RooDataset.'''
+        kwargs['ignorefriends'] = list(kwargs.get('ignorefriends', [])) + ['SelectedTree' + suffix]
+        tree = self.clone(suffix = suffix, **kwargs)
+        dsname = tree.dataset_name()
+        cache = DataCache(dsname, tree.dataset_file_name(), [dsname],
+                          lambda tree : {dsname : tree._make_dataset()}, args = (tree,))
+        return cache
+
+    def get_dataset(self, update = False, suffix = '', **kwargs):
+        '''Get the RooDataset.'''
+        cache = self.dataset_cache(update, suffix, **kwargs)
+        dsname = cache.args[0].dataset_name()
+        return getattr(cache, dsname)
 
 class DataLibrary(object) :
     '''Contains info on datasets and functions to retrieve them.'''

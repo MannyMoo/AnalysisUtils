@@ -5,10 +5,21 @@ import ROOT, pickle, sys
 from datetime import datetime
 from Silence import Silence, TempFileRedirectOutput
 
+def should_pickle(obj):
+    '''Check if an object should be pickled rather than using ROOT persistency.'''
+    if not isinstance(obj, ROOT.TObject):
+        return True
+    # Classes inheriting from TOBject that we prefer to be pickled.
+    # Bit hacky, but can't think of another way to do it just now.
+    pkllist = ('DataChain',)
+    if obj.__class__ in pkllist:
+        return True
+    return False
+
 def write(tfile, name, obj):
     '''Write an object to a TFile. If it's not a TObject, it's pickled and stored in the title of a TNamed.'''
     tfile.cd()
-    if not isinstance(obj, ROOT.TObject):
+    if should_pickle(obj):
         title = 'pkl:' + pickle.dumps(obj)
         obj = ROOT.TNamed(name, title)
     else:
