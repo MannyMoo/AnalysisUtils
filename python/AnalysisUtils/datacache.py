@@ -1,8 +1,9 @@
 '''Classes for caching data.'''
 
 from __future__ import print_function
-import ROOT, pickle
+import ROOT, pickle, sys
 from datetime import datetime
+from Silence import Silence, TempFileRedirectOutput
 
 def write(tfile, name, obj):
     '''Write an object to a TFile. If it's not a TObject, it's pickled and stored in the title of a TNamed.'''
@@ -26,10 +27,12 @@ def load(tfile, name):
 class DataCache(object):
     '''A class for caching the return values of a function.'''
 
-    def __init__(self, name, fname, names, function, args = (), kwargs = {}, update = False, debug = False):
+    def __init__(self, name, fname, names, function, args = (), kwargs = {}, update = False, debug = False,
+                 cachestdout = True, printstdout = True):
         super(DataCache, self).__setattr__('names', set(names))
         self.name = name
-        self.names.add('ctime')
+        for prop in 'ctime', 'stdout', 'stderr':
+            self.names.add(prop)
         self.fname = fname
         self.function = function
         self.args = tuple(args)
@@ -38,6 +41,8 @@ class DataCache(object):
         self.debug = debug
         if not debug:
             self.debug_msg = self.null_msg
+        self.cachestdout = cachestdout
+        self.printstdout = printstdout
         self._vals = None
 
     def debug_msg(self, *msg):
@@ -45,9 +50,6 @@ class DataCache(object):
 
     def null_msg(self, msg):
         pass
-
-    def properties(self):
-        return list(super(DataCache, self).__getattribute__('names')) + ['ctime']
 
     def load(self):
         '''Load the values, updating them if necessary.'''
@@ -75,12 +77,12 @@ class DataCache(object):
     values = property(fget = __get_vals, fset = lambda self, val: setattr(self, '_vals', val))
 
     def __getattr__(self, attr):
-        if attr in self.properties():
+        if attr in self.names:
             return self.values[attr]
         return super(DataCache, self).__getattribute__(attr)
 
     def __setattr__(self, attr, val):
-        if attr in self.properties():
+        if attr in self.names:
             self.values[attr] = val
         super(DataCache, self).__setattr__(attr, val)
 
@@ -90,8 +92,25 @@ class DataCache(object):
         self.debug_msg('update ctime')
         ctime = datetime.today()
         self.debug_msg('call function')
-        vals = self.function(*self.args, **self.kwargs)
+        if self.cachestdout:
+            self.debug_msg('caching stdout')
+            try:
+                with TempFileRedirectOutput() as redirect:
+                    vals = self.function(*self.args, **self.kwargs)
+            except:
+                # Call it again without the redirect to get the full traceback.
+                self.debug_msg('caught exception, call function again to raise it')
+                vals = self.function(*self.args, **self.kwargs)
+            stdout, stderr = redirect.read()
+            if self.printstdout:
+                print(stdout, end = '')
+                print(stderr, end = '', file = sys.stderr)
+        else:
+            vals = self.function(*self.args, **self.kwargs)
+            stdout = stderr = None
         vals['ctime'] = ctime
+        vals['stdout'] = stdout
+        vals['stderr'] = stderr
         self.set_vals(vals)
         self.write()
         self.debug_msg('execute complete')
@@ -115,11 +134,17 @@ class DataCache(object):
         '''Get the function name.'''
         return self.function.__module__ + '.' + self.function.__name__
 
+    def open_file(self, mode = ''):
+        '''Open the cache .root file.'''
+        with Silence():
+            fout = ROOT.TFile.Open(self.fname, mode)
+        return fout
+
     def write(self):
         '''Save to file.'''
         self.debug_msg('write')
-        fout = ROOT.TFile.Open(self.fname, 'recreate')
-        for name in self.properties():
+        fout = self.open_file('recreate')
+        for name in self.names:
             write(fout, name, self._vals[name])
         write(fout, 'names', self.names)
         # Could pickle the function itself, but that just stores its name anyway and forbids
@@ -152,7 +177,7 @@ class DataCache(object):
     def retrieve(self):
         '''Retrieved the cached values from the file. Returns None if they should be updated.'''
         self.debug_msg('retrieve')
-        fout = ROOT.TFile.Open(self.fname)
+        fout = self.open_file(self.fname)
         if not fout or fout.IsZombie():
             self.debug_msg('file is None or zombie, return None')
             return None
@@ -162,6 +187,7 @@ class DataCache(object):
             try:
                 obj = load(fout, name)
             except ValueError:
+                self.debug_msg('Failed to retrieve', name, ', return None')
                 return None
             if obj != comp:
                 self.debug_msg(name + " doesn't match what's in the file:\n" 
@@ -169,12 +195,13 @@ class DataCache(object):
                 self.debug_msg('return None')
                 return None
         vals = {}
-        for name in self.properties():
+        for name in self.names:
             try:
                 vals[name] = load(fout, name)
             except ValueError:
+                self.debug_msg('Failed to retrieve', name, ', return None')
                 return None
-        for arg in sortedargs['cacheargs'] + list(sortedargs['cachekwargs']):
+        for arg in sortedargs['cacheargs'] + list(sortedargs['cachekwargs'].values()):
             if arg.ctime > vals['ctime']:
                 self.debug_msg('Cache at {0} was updated at {1}, this cache was updated at {2}'\
                                .format(arg.fname, arg.ctime, vals['ctime']))
@@ -185,10 +212,74 @@ class DataCache(object):
         return vals
 
 if __name__ == '__main__':
-    cache = DataCache('bla', 'bla.root', ['bla'], lambda : {'bla': 'spam'}, debug = True)
-    print(cache.bla)
-    print(cache.bla)
-    cache.update()
-    cache2 = DataCache('boop', 'boop.root', ['boop'], lambda x : {'boop' : x.bla}, args = (cache,), debug = True)
-    print(cache2.boop)
-    print(cache.ctime, cache2.ctime)
+    from ROOT import TRandom3
+    import os
+
+    def calc_pi(n = 1000, seed = 1234):
+        print('calculate pi with n = ', n, 'seed =', seed)
+        rndm = TRandom3(seed)
+        npass = 0
+        for i in xrange(n):
+            x = rndm.Rndm()-0.5
+            y = rndm.Rndm()-0.5
+            r = (x**2 + y**2)**.5
+            if r < 0.5:
+                npass += 1.
+        pi = npass/n*4.
+        print('pi is', pi)
+        return {'pi' : pi}
+
+    def area(picache, r):
+        return {'area' : picache.pi*r**2}
+
+    for fname in 'pi.root', 'area.root':
+        if os.path.exists(fname):
+            os.remove(fname)
+
+    debug = False
+    printstdout = False
+    cachestdout = True
+
+    # standard access.
+    picache = DataCache('pi', 'pi.root', ['pi'], calc_pi, kwargs = dict(n = 1000, seed = 1234), debug = debug, printstdout = printstdout, cachestdout = cachestdout)
+    print('pi', picache.pi)
+    # Check that it doesn't recaclulate anything.
+    print('pi again', picache.pi)
+
+    # A cache using another cache as input.
+    areacache = DataCache('area', 'area.root', ['area'], area, kwargs = dict(picache = picache, r = 1.), debug = debug, printstdout = printstdout, cachestdout = cachestdout)
+    print('area', areacache.area)
+
+    # Update the input cache, check that the dependent cache updates.
+    picache.update()
+    areacache = DataCache('area2', 'area.root', ['area'], area, kwargs = dict(picache = picache, r = 1.), debug = debug, printstdout = printstdout, cachestdout = cachestdout)
+    print('area after update', areacache.area)
+
+    # Change the arguments of the input cache, but don't immediately access it.
+    picache = DataCache('pi2', 'pi.root', ['pi'], calc_pi, kwargs = dict(n = 2000, seed = 1234), debug = debug, printstdout = printstdout, cachestdout = cachestdout)
+    # Accessing the dependent cache should trigger an update of the input cache.
+    areacache = DataCache('area3', 'area.root', ['area'], area, kwargs = dict(picache = picache, r = 1.), debug = debug, printstdout = printstdout, cachestdout = cachestdout)
+    print('area after 2nd update', areacache.area)
+    
+    # Cause a crash.
+    picache = DataCache('pi3', 'pi.root', ['pi'], calc_pi, kwargs = dict(n = 2000, seed = '1234'), debug = debug, printstdout = printstdout, cachestdout = cachestdout)
+    #picache.pi
+    try:
+        picache.pi
+    except Exception as error:
+        print('Caught exception:')
+        print(error)
+
+    # Cause a crash in the input cache when calculating the dependent cache
+    areacache = DataCache('area4', 'area.root', ['area'], area, kwargs = dict(picache = picache, r = 1.), debug = debug, printstdout = printstdout, cachestdout = cachestdout)
+    #areacache.area
+    try:
+        areacache.area
+    except Exception as error:
+        print('Caught exception:')
+        print(error)
+
+    # Check the original still works.
+    picache = DataCache('pi4', 'pi.root', ['pi'], calc_pi, kwargs = dict(n = 2000, seed = 1234), debug = debug, printstdout = printstdout, cachestdout = cachestdout)
+    print('pi4', picache.pi)
+
