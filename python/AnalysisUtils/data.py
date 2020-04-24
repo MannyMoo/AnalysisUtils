@@ -204,7 +204,7 @@ class DataChain(ROOT.TChain):
                          ignorefriends = self.ignorefriends, sortfiles = self.sortfiles,
                          zombiewarning = self.zombiewarning, build = self.build)
 
-    def clone(self, ignoreperfile = False, suffix = '', **kwargs):
+    def clone(self, ignoreperfile = False, suffix = '', keepfriends = True, **kwargs):
         '''Get a clone of this DataChain. kwargs can be any that're given to the DataChain constructor,
         which will override the current values.'''
         args = self.__getstate__()
@@ -212,6 +212,8 @@ class DataChain(ROOT.TChain):
         args['name'] += suffix
         if ignoreperfile:
             args['ignorefriends'] = self.get_ignorefriends_perfile(args['ignorefriends'], False)
+        if keepfriends and suffix:
+            args['friends'] = list(args.get('friends', [])) + self.friends
         return DataChain(**args)
 
     def __eq__(self, other):
@@ -415,7 +417,7 @@ class DataChain(ROOT.TChain):
 
     def dataset_cache(self, update = False, suffix = '', **kwargs):
         '''Get the DataCache for the RooDataset.'''
-        kwargs['ignorefriends'] = list(kwargs.get('ignorefriends', [])) + ['SelectedTree' + suffix]
+        kwargs['ignorefriends'] = list(kwargs.get('ignorefriends', [])) + ['SelectedTree']
         tree = self.clone(suffix = suffix, **kwargs)
         dsname = tree.dataset_name()
         cache = DataCache(dsname, tree.dataset_file_name(), [dsname],
