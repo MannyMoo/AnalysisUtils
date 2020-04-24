@@ -1,5 +1,6 @@
 '''Classes for caching data.'''
 
+from __future__ import print_function
 import ROOT, pickle
 from datetime import datetime
 
@@ -25,21 +26,22 @@ def load(tfile, name):
 class DataCache(object):
     '''A class for caching the return values of a function.'''
 
-    def __init__(self, fname, names, function, args = (), kwargs = {}, update = False, debug = False):
+    def __init__(self, name, fname, names, function, args = (), kwargs = {}, update = False, debug = False):
         super(DataCache, self).__setattr__('names', set(names))
+        self.name = name
         self.names.add('ctime')
         self.fname = fname
         self.function = function
         self.args = tuple(args)
         self.kwargs = dict(kwargs)
-        self.update = update
+        self.doupdate = update
         self.debug = debug
         if not debug:
             self.debug_msg = self.null_msg
         self._vals = None
 
-    def debug_msg(self, msg):
-        print 'DEBUG:', msg
+    def debug_msg(self, *msg):
+        print('DEBUG:', self.name + ':', *msg)
 
     def null_msg(self, msg):
         pass
@@ -50,7 +52,7 @@ class DataCache(object):
     def load(self):
         '''Load the values, updating them if necessary.'''
         self.debug_msg('load')
-        if not self.update:
+        if not self.doupdate:
             self.debug_msg('update not requested, attempt to retrieve')
             vals = self.retrieve()
         else:
@@ -94,6 +96,8 @@ class DataCache(object):
         self.write()
         self.debug_msg('execute complete')
         return vals
+
+    update = execute
 
     def set_vals(self, vals):
         '''Set the values for the cached items.'''
@@ -181,9 +185,10 @@ class DataCache(object):
         return vals
 
 if __name__ == '__main__':
-    cache = DataCache('bla.root', ['bla'], lambda : {'bla': 'spam'}, debug = True)
-    print cache.bla
-    print cache.bla
-    cache2 = DataCache('boop.root', ['boop'], lambda x : {'boop' : x.bla}, args = (cache,), debug = True)
-    print cache2.boop
-    print cache.ctime, cache2.ctime
+    cache = DataCache('bla', 'bla.root', ['bla'], lambda : {'bla': 'spam'}, debug = True)
+    print(cache.bla)
+    print(cache.bla)
+    cache.update()
+    cache2 = DataCache('boop', 'boop.root', ['boop'], lambda x : {'boop' : x.bla}, args = (cache,), debug = True)
+    print(cache2.boop)
+    print(cache.ctime, cache2.ctime)
