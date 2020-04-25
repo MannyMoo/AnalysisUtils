@@ -72,6 +72,8 @@ class DataChain(ROOT.TChain):
         self.sortfiles = sortfiles
         self.zombiewarning = zombiewarning
         self.build = build
+        self.ctime = None
+        self.loadcode = None
 
         super(DataChain, self).__init__(tree)
         # Option so it doesn't add files, do aliases, friends, etc, just caches the file info.
@@ -90,6 +92,8 @@ class DataChain(ROOT.TChain):
 
         for varname, varinfo in self.variables.items():
             self.SetAlias(varname, varinfo['formula'])
+
+        self.loadcode = self.LoadTree(0)
         if self.is_ok(self.zombiewarning):
             set_prefix_aliases(self, self.aliases)
 
@@ -101,7 +105,20 @@ class DataChain(ROOT.TChain):
         friends += self.get_auto_friends(self.ignorefriends)
         for friend in friends:
             self.AddFriend(friend)
+        
         self.built = True
+
+        if self.loadcode < 0:
+            return
+
+        tdir = self.GetFile()
+        if not tdir:
+            return
+        for name in self.tree.split('/'):
+            key = tdir.GetKey(name)
+            tdir = tdir.Get(name)
+        ctime = key.GetDatime()
+        self.ctime = datetime.datetime(**{attr : getattr(ctime, 'Get' + attr.capitalize())() for attr in ('year', 'month', 'day', 'hour', 'minute', 'second')})
 
     def __del__(self):
         '''Closes the TChain's file.'''
@@ -117,7 +134,13 @@ class DataChain(ROOT.TChain):
 
     def is_ok(self, warning = True):
         '''Check if we can load the first entry in the chain.'''
-        result = self.LoadTree(0)
+        result = self.loadcode
+        # Not built.
+        if None == result:
+            if warning:
+                print >> sys.stderr, 'ERROR: DataChain.is_ok: dataset', self.name,\
+                    'has not been built!'
+            return False
         if result >= 0:
             return True
         if warning:
@@ -418,6 +441,7 @@ class DataChain(ROOT.TChain):
     def dataset_cache(self, update = False, suffix = '', **kwargs):
         '''Get the DataCache for the RooDataset.'''
         kwargs['ignorefriends'] = list(kwargs.get('ignorefriends', [])) + ['SelectedTree']
+        # TODO: Want to copy only the friends and variables needed for the dataset.
         tree = self.clone(suffix = suffix, **kwargs)
         dsname = tree.dataset_name()
         cache = DataCache(dsname, tree.dataset_file_name(), [dsname],
