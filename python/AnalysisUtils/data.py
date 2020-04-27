@@ -28,9 +28,13 @@ def _is_ok(tree, fout, selection):
 def _parallel_filter(tree, ifile, iend, selection, outputdir, outputname, nthreads,
                      zfill, overwrite, ignorefriends):
     '''Filter a single file from a TChain.'''
-    fout = os.path.join(outputdir, outputname + '_{0}_{1}.root')
-    fout = fout.format(str(ifile).zfill(zfill), str(iend).zfill(zfill))
-    tree = tree.get_subset(ifile, iend, ignorefriends = ignorefriends)
+    if ifile != 0 or iend != tree.nfiles():
+        fout = os.path.join(outputdir, outputname + '_{0}_{1}.root')
+        fout = fout.format(str(ifile).zfill(zfill), str(iend).zfill(zfill))
+        tree = tree.get_subset(ifile, iend, ignorefriends = ignorefriends)
+    else:
+        fout = os.path.join(outputdir, outputname + '.root')
+        tree = tree.clone()
     if not overwrite and _is_ok(tree, fout, selection):
         return True
     cptree = copy_tree(tree = tree, selection = selection,
@@ -216,12 +220,12 @@ class DataChain(ROOT.TChain):
     def get_subset(self, ifile, iend = None, addfriends = True, ignorefriends = [], ignoreperfile = False):
         '''Get a subset of the chain using a given file index or range of files.'''
         ignorefriends = self.get_ignorefriends_perfile(ignorefriends, not ignoreperfile)
-        friends = {}
+        friends = []
         if addfriends:
             for name, friend in self.friends.items():
                 if self._ignore(friend.name, ignorefriends):
                     continue
-                friends[name] = friend.get_subset(ifile, iend, addfriends, ignorefriends, ignoreperfile)
+                friends.append(friend.get_subset(ifile, iend, addfriends, ignorefriends, ignoreperfile))
         if None == iend:
             iend = ifile+1
         files = self.files[ifile:iend]
@@ -262,6 +266,8 @@ class DataChain(ROOT.TChain):
         kwargs['addfriends'] = False
         kwargs['ignorefriends'] = []
         return self.clone(ignoreperfile = ignoreperfile, suffix = suffix, keepfriends = False, **kwargs)
+
+    clone_for_cache = clone_for_variables
 
     def __eq__(self, other):
         return self.__dict__ == other.__dict__
@@ -394,6 +400,8 @@ class DataChain(ROOT.TChain):
         procs = []
         if None == noutputfiles:
             noutputfiles = nfiles
+        if noutputfiles != 1:
+            ignorefriends = self.get_ignorefriends_perfile(ignorefriends)
         nper = int(nfiles/noutputfiles)
         ranges =[[i*nper, (i+1)*nper] for i in xrange(noutputfiles)]
         ranges[-1][-1] = nfiles
@@ -405,9 +413,10 @@ class DataChain(ROOT.TChain):
                           overwrite = overwrite, ignorefriends = ignorefriends)
             kwargslist.append(kwargs)
 
-        # for kwargs in kwargslist:
-        #     apply(_parallel_filter, (), kwargs)
-        # return True
+        if True:#len(kwargslist) == 1:
+            for kwargs in kwargslist:
+                apply(_parallel_filter, (), kwargs)
+            return True
 
         for kwargs in kwargslist:
             proc = pool.apply_async(_parallel_filter, 
@@ -625,76 +634,17 @@ class DataLibrary(object) :
         variables created when making the RooDataSet.'''
         return self.get_data(dataname, build = False).selected_file_name(makedir = makedir)
 
-    def retrieve_dataset(self, dataname, varnames, suffix = '', selection = '') :
-        '''Retrieve a previously saved RooDataSet for the given dataset and check that it contains
-        variables with the given names. If the file or RooDataSet doesn't exist, or the RooDataSet
-        contains different variables, returns None.'''
-
-        tree = self.get_data(dataname, ignorefriends = ['SelectedTree' + suffix])
-
-        fout = ROOT.TFile.Open(self.dataset_file_name(dataname, suffix))
-        if not fout or fout.IsZombie():
-            return
-        # selection wasn't always recorded to the file, so for backwards compatibility,
-        # check if it's there first.
-        if fout.Get('selection') and fout.Get('selection').GetTitle() != selection:
-            fout.Close()
-            return
-        if self.ignorecompilefails :
-            variables = tree.variables
-            checkvarnames = filter(lambda name : check_formula_compiles(variables[name]['formula'],
-                                                                        tree),
-                                   varnames)
-        else :
-            checkvarnames = varnames
-        checkvarnames = set(checkvarnames)
-        dataset = fout.Get(dataname + suffix)
-        if not dataset or dataset.numEntries() == 0 or dataset.get(0).size() == 0:
-            fout.Close()
-            return
-        datanames = set(dataset.get(0).contentsString().split(','))
-        if dataset and checkvarnames == datanames :
-            fout.Close()
-            return dataset
-        print('Variables for dataset', dataname, 'have changed. Expected', checkvarnames, 'found', datanames, '. RooDataSet will be updated.')
-        fout.Close()
-
     def get_dataset(self, dataname, varnames = None, update = False, suffix = '', selection = None) :
         '''Get the RooDataSet of the given name. It's created/updated on demand. varnames is the 
         set of variables to be included in the RooDataSet. They must correspond to those defined 
         in the variables module. If the list of varnames changes or if update = True the 
         RooDataSet will be recreated.'''
-
-        tree = self.get_data(dataname, ignorefriends = ['SelectedTree' + suffix])
-        variables = tree.variables
-        if None == selection:
-            selection = tree.selection
-
-        if not varnames :
-            varnames = self.varnames
-        if not update :
-            dataset = self.retrieve_dataset(dataname, varnames, suffix, selection)
-            if dataset:
-                return dataset
-
-        print('Making RooDataSet for', dataname)
-
-        selectedtreefile = self.selected_file_name(dataname, True, suffix)
-        datasetname = dataname + suffix
-        dataset = make_roodataset(datasetname, datasetname, tree,
-                                  ignorecompilefails = self.ignorecompilefails,
-                                  selection = selection,
-                                  selectedtreefile = selectedtreefile,
-                                  selectedtreename = 'SelectedTree' + suffix,
-                                  **dict((var, variables[var]) for var in varnames))
-
-        fname = self.dataset_file_name(dataname, suffix)
-        print('Saving to', fname)
-        fout = ROOT.TFile.Open(fname, 'recreate')
-        dataset.Write()
-        ROOT.TNamed('selection', selection).Write()
-        fout.Close()
-        return dataset
+        kwargs = dict(update = update, suffix = suffix)
+        if varnames:
+            kwargs['varnames'] = varnames
+        if None != selection:
+            kwargs['selection'] = selection
+        return self.get_data(dataname).get_dataset(**kwargs)
 
     def add_merged_datasets(self, mergedsub, name1, name2) :
         '''Merge datasets containing name1 or name2 in their name into a new dataset
@@ -796,34 +746,13 @@ class DataLibrary(object) :
             setattr(self, name + '_Dataset', DataLibrary.DataGetter(self.get_dataset, name))
 
     def parallel_filter_data(self, dataset, selection, outputdir, outputname,
-                             nthreads = multiprocessing.cpu_count(), zfill = None, overwrite = True, ignorefriends = []):
+                             nthreads = multiprocessing.cpu_count(), zfill = None, overwrite = True,
+                             ignorefriends = [], noutputfiles = None):
         '''Filter a dataset with the given selection and save output to the outputdir/outputname/.'''
-        outputdir = os.path.join(outputdir, outputname)
-        if not os.path.exists(outputdir):
-            os.makedirs(outputdir)
-
-        # Do each file individually in parallel.
-        pool = Pool(processes = nthreads)
-        info = self.get_data_info(dataset, ignorefriends = ignorefriends)
-        nfiles = len(info['files'])
-        if None == zfill:
-            zfill = len(str(nfiles))
-        procs = []
-        for i in xrange(nfiles):
-            kwargs = dict(datalib = self, dataset = dataset, selection = selection,
-                          outputdir = outputdir, outputname = outputname, 
-                          nthreads = nthreads, zfill = zfill, ifile = i,
-                          overwrite = overwrite, ignorefriends = ignorefriends)
-            proc = pool.apply_async(_parallel_filter, 
-                                    kwds = kwargs)
-            procs.append(proc)
-            #apply(_parallel_filter, (), kwargs)
-        success = True
-        for i, proc in enumerate(procs):
-            proc.wait()
-            procsuccess = proc.successful()
-            success = success and procsuccess
-        return success
+        data = self.get_data(dataset)
+        data.parallel_filter(outputdir = outputdir, outputname = outputname, selection = selection,
+                             nthreads = nthreads, zfill = zfill, overwrite = overwrite,
+                             ignorefriends = ignorefriends, noutputfiles = noutputfiles)
 
 class BinnedFitData(object) :
     '''Bin a RooDataSet in one or two variables and make RooDataHists of another variable in those bins.'''
