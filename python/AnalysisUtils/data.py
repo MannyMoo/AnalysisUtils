@@ -204,7 +204,7 @@ class DataChain(ROOT.TChain):
     def get_ignorefriends_perfile(self, ignorefriends = [], warning = True):
         '''Get friends that should be ignored for per-file operations as they have different n. files.'''
         ignores = []
-        for friend in self.friends:
+        for friend in self.friends.values():
             if self._ignore(friend.name, ignorefriends):
                 continue
             if len(friend.files) != len(self.files):
@@ -216,12 +216,12 @@ class DataChain(ROOT.TChain):
     def get_subset(self, ifile, iend = None, addfriends = True, ignorefriends = [], ignoreperfile = False):
         '''Get a subset of the chain using a given file index or range of files.'''
         ignorefriends = self.get_ignorefriends_perfile(ignorefriends, not ignoreperfile)
-        friends = []
+        friends = {}
         if addfriends:
-            for friend in self.friends:
+            for name, friend in self.friends.items():
                 if self._ignore(friend.name, ignorefriends):
                     continue
-                friends.append(friend.get_subset(ifile, iend, addfriends, ignorefriends, ignoreperfile))
+                friends[name] = friend.get_subset(ifile, iend, addfriends, ignorefriends, ignoreperfile)
         if None == iend:
             iend = ifile+1
         files = self.files[ifile:iend]
@@ -241,8 +241,24 @@ class DataChain(ROOT.TChain):
         if ignoreperfile:
             args['ignorefriends'] = self.get_ignorefriends_perfile(args['ignorefriends'], False)
         if keepfriends and suffix:
-            args['friends'] = list(args.get('friends', [])) + self.friends
+            args['friends'] = args.get('friends', {})
+            args['friends'].update(self.friends)
         return DataChain(**args)
+
+    def clone_for_variables(self, variables = None, ignoreperfile = False, suffix = '', **kwargs):
+        '''Get a clone of this DataChain keeping only the friends and variable definitions needed
+        for the given variables, and the selection if set/given. This is useful for caching the 
+        DataChain keeping only the info needed for certain variables.'''
+        if None == variables:
+            variables = self.varnames
+        kwargs['selection'] = kwargs.get('selection', self.selection)
+        kwargs['variables'] = {var : self.variables[var] for var in variables}
+        if kwargs['selection']:
+            variables = list(variables) + [kwargs['selection']]
+        kwargs['friends'] = self.get_used_friends(variables).values()
+        kwargs['addfriends'] = False
+        kwargs['ignorefriends'] = []
+        return self.clone(ignoreperfile = ignoreperfile, suffix = suffix, keepfriends = False, **kwargs)
 
     def __eq__(self, other):
         return self.__dict__ == other.__dict__
@@ -271,9 +287,9 @@ class DataChain(ROOT.TChain):
             self.Draw('{1} >> {0}'.format(h.GetName(), var), selection, opt)
         return h
 
-    def dataset_file_name(self, suffix = ''):
-        '''Get the name of the file containing the RooDataset, optionally with the given suffix.'''
-        return os.path.join(self.datasetdir, self.name + suffix + '_Dataset.root')
+    def dataset_file_name(self):
+        '''Get the name of the file containing the RooDataset.'''
+        return os.path.join(self.datasetdir, self.name + '_Dataset.root')
 
     def add_friend_tree(self, friendname, adderkwargs, treename = None, perfile = False,
                         makedir = True, zfill = 4):
@@ -296,10 +312,10 @@ class DataChain(ROOT.TChain):
         treeout.Write()
         fout.Close()
 
-    def selected_file_name(self, makedir = False, suffix = '') :
+    def selected_file_name(self, makedir = False) :
         '''Get the name of the file containing the TTree of range and selection
         variables created when making the RooDataSet.'''
-        return self.friend_file_name('SelectedTree' + suffix, 'SelectedTree' + suffix,
+        return self.friend_file_name('SelectedTree', 'SelectedTree',
                                      makedir = makedir)
 
     def check_consistency(self):
@@ -347,12 +363,12 @@ class DataChain(ROOT.TChain):
                 print('Branches in the first TTree not in this TTree:', branchnames.difference(thesenames))
                 success = False
             tf.Close()
-        for friend in self.friends:
+        for friend in self.friends.values():
             if friend.GetEntries() != self.GetEntries():
                 success = False
                 print('Friend', friend.name, 'has the wrong number of entries:', friend.GetEntries(),
                       'should be', self.GetEntries())
-        for friend in self.friends:
+        for friend in self.friends.values():
             friendsuccess = friend.check_consistency()
             success = friendsuccess and success
         return success
@@ -446,8 +462,7 @@ class DataChain(ROOT.TChain):
     def dataset_cache(self, update = False, suffix = '', **kwargs):
         '''Get the DataCache for the RooDataset.'''
         kwargs['ignorefriends'] = list(kwargs.get('ignorefriends', [])) + ['SelectedTree']
-        # TODO: Want to copy only the friends and variables needed for the dataset.
-        tree = self.clone(suffix = suffix, **kwargs)
+        tree = self.clone_for_variables(suffix = suffix, **kwargs)
         dsname = tree.dataset_name()
         cache = DataCache(dsname, tree.dataset_file_name(), [dsname],
                           lambda tree : {dsname : tree._make_dataset()}, args = (tree,))
@@ -483,8 +498,13 @@ class DataChain(ROOT.TChain):
         aliases = self.get_aliases()
         return StringFormula(formula).substitute_variables(**aliases)
 
-    def get_used_friends(self, variable):
+    def get_used_friends(self, variable, *variables):
         '''Get the friend trees used in the variable formula.'''
+        if variables:
+            friends = self.get_used_friends(variable)
+            for var in variables:
+                friends.update(self.get_used_friends(var))
+            return friends
         variable = self.expand_formula(variable)
         branches = variable.named_variables()
         friends = {}
@@ -569,10 +589,10 @@ class DataLibrary(object) :
         '''Get the directory where RooDataSets etc will be saved for this dataset.'''
         return self.get_data(dataname, build = False).datasetdir
 
-    def dataset_file_name(self, dataname, suffix = '') :
+    def dataset_file_name(self, dataname) :
         '''Get the name of the file containing the RooDataset corresponding to the given
         dataset name.'''
-        return self.get_data(dataname, build = False).dataset_file_name(suffix)
+        return self.get_data(dataname, build = False).dataset_file_name()
 
     def friends_directory(self, dataname) :
         '''Get the directory containing friends of this dataset that will be automatically loaded.'''
@@ -596,10 +616,10 @@ class DataLibrary(object) :
             tree = self.get_data(dataname)
         tree.add_friend_tree(friendname, adderkwargs, treename, perfile, makedir, zfill)
 
-    def selected_file_name(self, dataname, makedir = False, suffix = '') :
+    def selected_file_name(self, dataname, makedir = False) :
         '''Get the name of the file containing the TTree of range and selection
         variables created when making the RooDataSet.'''
-        return self.get_data(dataname, build = False).selected_file_name(makedir = makedir, suffix = suffix)
+        return self.get_data(dataname, build = False).selected_file_name(makedir = makedir)
 
     def retrieve_dataset(self, dataname, varnames, suffix = '', selection = '') :
         '''Retrieve a previously saved RooDataSet for the given dataset and check that it contains
@@ -736,9 +756,9 @@ class DataLibrary(object) :
             data.append(self.get_dataset(dataset, **kwargs))
         return data
 
-    def get_dataset_update_time(self, name, suffix = ''):
+    def get_dataset_update_time(self, name):
         '''Get the time that the RooDataset was last updated.'''
-        fname = self.dataset_file_name(name, suffix)
+        fname = self.dataset_file_name(name)
         if not os.path.exists(fname):
             return
         return datetime.datetime.fromtimestamp(os.path.getmtime(fname))
