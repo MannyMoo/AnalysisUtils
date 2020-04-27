@@ -26,11 +26,16 @@ def write(tfile, name, obj):
         obj.SetName(name)
     obj.Write()
 
-def load(tfile, name):
+def load(tfile, name, fileresident = False):
     '''Load an object from a TFile. If it's a TNamed, check if it's a pickled object, and if so, unpickle it.'''
     obj = tfile.Get(name)
     if not obj:
         raise ValueError('TFile {0} doesn\'t contain an object named {1!r}!'.format(tfile.GetName(), name))
+    if not fileresident:
+        try:
+            obj.SetDirectory(None)
+        except AttributeError:
+            pass
     if isinstance(obj, ROOT.TNamed) and obj.GetTitle().startswith('pkl:'):
         obj = pickle.loads(obj.GetTitle()[4:])
     return obj

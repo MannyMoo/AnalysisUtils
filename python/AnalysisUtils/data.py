@@ -67,9 +67,9 @@ class DataChain(ROOT.TChain):
             self.datasetdir = datasetdir
         else:
             self.datasetdir = os.path.dirname(self.files[0])
+        self.ignorefriends = ignorefriends
         self.initfriends = filter(lambda chain : chain.name not in self.ignorefriends, friends)
         self.addfriends = addfriends
-        self.ignorefriends = ignorefriends
         self.sortfiles = sortfiles
         self.zombiewarning = zombiewarning
         self.build = build
@@ -241,8 +241,9 @@ class DataChain(ROOT.TChain):
         if ignoreperfile:
             args['ignorefriends'] = self.get_ignorefriends_perfile(args['ignorefriends'], False)
         if keepfriends and suffix:
-            args['friends'] = args.get('friends', {})
-            args['friends'].update(self.friends)
+            friends = set(args.get('friends', []))
+            friends.update(self.friends.values())
+            args['friends'] = list(friends)
         return DataChain(**args)
 
     def clone_for_variables(self, variables = None, ignoreperfile = False, suffix = '', **kwargs):
@@ -253,9 +254,11 @@ class DataChain(ROOT.TChain):
             variables = self.varnames
         kwargs['selection'] = kwargs.get('selection', self.selection)
         kwargs['variables'] = {var : self.variables[var] for var in variables}
+        usevariables = list(variables)
         if kwargs['selection']:
-            variables = list(variables) + [kwargs['selection']]
-        kwargs['friends'] = self.get_used_friends(variables).values()
+            usevariables += [kwargs['selection']]
+        kwargs['friends'] = [friend.clone_for_variables(variables) 
+                             for friend in self.get_used_friends(usevariables).values()]
         kwargs['addfriends'] = False
         kwargs['ignorefriends'] = []
         return self.clone(ignoreperfile = ignoreperfile, suffix = suffix, keepfriends = False, **kwargs)
@@ -459,13 +462,14 @@ class DataChain(ROOT.TChain):
                                selectedtreename = 'SelectedTree',
                                **dict((var, self.variables[var]) for var in self.varnames))
 
-    def dataset_cache(self, update = False, suffix = '', **kwargs):
+    def dataset_cache(self, update = False, suffix = '', debug = False, **kwargs):
         '''Get the DataCache for the RooDataset.'''
         kwargs['ignorefriends'] = list(kwargs.get('ignorefriends', [])) + ['SelectedTree']
         tree = self.clone_for_variables(suffix = suffix, **kwargs)
         dsname = tree.dataset_name()
         cache = DataCache(dsname, tree.dataset_file_name(), [dsname],
-                          lambda tree : {dsname : tree._make_dataset()}, args = (tree,))
+                          lambda tree : {dsname : tree._make_dataset()}, args = (tree,),
+                          debug = debug)
         return cache
 
     def get_dataset(self, update = False, suffix = '', **kwargs):
