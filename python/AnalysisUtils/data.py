@@ -1,5 +1,6 @@
 '''Functions to access all the relevant datasets for the analysis, both TTrees and RooDataSets.'''
 
+from __future__ import print_function
 from AnalysisUtils.RooFit import RooFit
 import os, ROOT, pprint, cppyy, glob, re, multiprocessing, datetime, sys
 from AnalysisUtils.makeroodataset import make_roodataset, make_roodatahist
@@ -54,19 +55,19 @@ class DataChain(ROOT.TChain):
             self.files = sorted(files)
         else:
             self.files = list(files)
-        if not self.files:
-            raise VauleError('ERROR constructing DataChain {0}: no files given!'.format(self.name))
+        if not self.files and zombiewarning:
+            print('ERROR: constructing DataChain {0}: no files given!'.format(self.name), file = sys.stderr)
         self.variables = NamedFormulae(variables)
         self.varnames = varnames
         self.selection = selection
         self.ignorecompilefails = ignorecompilefails
         self.aliases = aliases
-        self.friends = []
+        self.friends = {}
         if datasetdir:
             self.datasetdir = datasetdir
         else:
             self.datasetdir = os.path.dirname(self.files[0])
-        self.initfriends = friends
+        self.initfriends = filter(lambda chain : chain.name not in self.ignorefriends, friends)
         self.addfriends = addfriends
         self.ignorefriends = ignorefriends
         self.sortfiles = sortfiles
@@ -97,12 +98,14 @@ class DataChain(ROOT.TChain):
         if self.is_ok(self.zombiewarning):
             set_prefix_aliases(self, self.aliases)
 
+        for friend in self.initfriends:
+            self.AddFriend(friend)
+
         if not self.addfriends:
             self.built = True
             return
 
-        friends = filter(lambda chain : chain.name not in self.ignorefriends, self.initfriends)
-        friends += self.get_auto_friends(self.ignorefriends)
+        friends = self.get_auto_friends(self.ignorefriends)
         for friend in friends:
             self.AddFriend(friend)
         
@@ -122,15 +125,17 @@ class DataChain(ROOT.TChain):
 
     def __del__(self):
         '''Closes the TChain's file.'''
-        #print 'Del', self.name
+        #print('Del', self.name)
         if self.GetFile():
-            #print 'Close file', self.GetFile().GetName()
+            #print('Close file', self.GetFile().GetName())
             self.GetFile().Close()
 
     def AddFriend(self, friend, alias = '', warn = False):
         '''Add a friend tree.'''
         super(DataChain, self).AddFriend(friend, alias, warn)
-        self.friends.append(friend)
+        if not alias:
+            alias = friend.name
+        self.friends[alias] = friend
 
     def is_ok(self, warning = True):
         '''Check if we can load the first entry in the chain.'''
@@ -138,14 +143,14 @@ class DataChain(ROOT.TChain):
         # Not built.
         if None == result:
             if warning:
-                print >> sys.stderr, 'ERROR: DataChain.is_ok: dataset', self.name,\
-                    'has not been built!'
+                print('ERROR: DataChain.is_ok: dataset', self.name, 'has not been built!',
+                      file = sys.stderr)
             return False
         if result >= 0:
             return True
         if warning:
-            print >> sys.stderr, 'ERROR: DataChain.is_ok: dataset', self.name,\
-                'is a zombie! (error {0})'.format(result)
+            print('ERROR: DataChain.is_ok: dataset', self.name, 'is a zombie! (error {0})'.format(result),
+                  file = sys.stderr)
         return False
 
     def friends_directory(self):
@@ -205,7 +210,7 @@ class DataChain(ROOT.TChain):
             if len(friend.files) != len(self.files):
                 ignores.append(friend.name)
         if ignores and warning:
-            print 'Warning: skipping friends', ignores, 'of', self.name, 'due to different n. files'
+            print('Warning: skipping friends', ignores, 'of', self.name, 'due to different n. files')
         return ignorefriends + ignores
 
     def get_subset(self, ifile, iend = None, addfriends = True, ignorefriends = [], ignoreperfile = False):
@@ -302,33 +307,33 @@ class DataChain(ROOT.TChain):
         the same branches.'''
         success = True
 
-        print 'Check dataset', self.name, 'for consistency'
+        print('Check dataset', self.name, 'for consistency')
         # Check files are unique
         filesset = set(self.files)
         if len(self.files) != len(filesset) :
-            print 'Some files are duplicated'
+            print('Some files are duplicated')
             success = False
             for f in filesset :
                 fcount = info['files'].count(f)
                 if fcount != 1 :
-                    print 'File', f, 'appears', fcount, 'times'
+                    print('File', f, 'appears', fcount, 'times')
 
         branchnames = []
         for f in self.files :
             tf = ROOT.TFile.Open(f)
             # Check file can be opened.
             if not tf :
-                print 'File', f, "can't be opened!"
+                print('File', f, "can't be opened!")
                 success = False
                 continue
             if tf.IsZombie() :
-                print 'File', f, "can't be opened!"
+                print('File', f, "can't be opened!")
                 success = False
                 continue
             # Check it contains the TTree.
             tree = tf.Get(self.tree)
             if not tree :
-                print 'File', f, "doesn't contain a TTree named", repr(self.tree)
+                print('File', f, "doesn't contain a TTree named", repr(self.tree))
                 success = False
                 tf.Close()
                 continue
@@ -337,16 +342,16 @@ class DataChain(ROOT.TChain):
                 branchnames = set(br.GetName() for br in tree.GetListOfBranches())
             thesenames = set(br.GetName() for br in tree.GetListOfBranches())
             if branchnames != thesenames :
-                print 'Branches in file', f, "don't match the first TTree:"
-                print 'Branches in this TTree not in the first TTree:', thesenames.difference(branchnames)
-                print 'Branches in the first TTree not in this TTree:', branchnames.difference(thesenames)
+                print('Branches in file', f, "don't match the first TTree:")
+                print('Branches in this TTree not in the first TTree:', thesenames.difference(branchnames))
+                print('Branches in the first TTree not in this TTree:', branchnames.difference(thesenames))
                 success = False
             tf.Close()
         for friend in self.friends:
             if friend.GetEntries() != self.GetEntries():
                 success = False
-                print 'Friend', friend.name, 'has the wrong number of entries:', friend.GetEntries(),\
-                    'should be', self.GetEntries()
+                print('Friend', friend.name, 'has the wrong number of entries:', friend.GetEntries(),
+                      'should be', self.GetEntries())
         for friend in self.friends:
             friendsuccess = friend.check_consistency()
             success = friendsuccess and success
@@ -453,6 +458,40 @@ class DataChain(ROOT.TChain):
         cache = self.dataset_cache(update, suffix, **kwargs)
         dsname = cache.args[0].dataset_name()
         return getattr(cache, dsname)
+
+    def GetListOfAliases(self):
+        '''Override GetListOfAliases and set ROOT.kMustCleanup = False on the list (otherwise python
+        tries to delete it).'''
+        aliases = super(DataChain, self).GetListOfAliases()
+        if aliases:
+            aliases.SetBit(ROOT.kMustCleanup, False)
+        return aliases
+
+    def get_aliases(self):
+        '''Get aliases, including those of friends, as a dict.'''
+        aliases = {}
+        for tree in [self] + self.friends.values():
+            aliaslist = tree.GetListOfAliases()
+            if not aliaslist:
+                continue
+            for v in aliaslist:
+                aliases[v.GetName()] = v.GetTitle()
+        return aliases
+
+    def expand_formula(self, formula):
+        '''Get the fully expanded formula, substituting out any aliases.'''
+        aliases = self.get_aliases()
+        return StringFormula(formula).substitute_variables(**aliases)
+
+    def get_used_friends(self, variable):
+        '''Get the friend trees used in the variable formula.'''
+        variable = self.expand_formula(variable)
+        branches = variable.named_variables()
+        friends = {}
+        for name, friend in self.friends.items():
+            if any(br in friend.GetListOfBranches() for br in branches):
+                friends[name] = friend
+        return friends
 
 class DataLibrary(object) :
     '''Contains info on datasets and functions to retrieve them.'''
@@ -593,7 +632,7 @@ class DataLibrary(object) :
         if dataset and checkvarnames == datanames :
             fout.Close()
             return dataset
-        print 'Variables for dataset', dataname, 'have changed. Expected', checkvarnames, 'found', datanames, '. RooDataSet will be updated.'
+        print('Variables for dataset', dataname, 'have changed. Expected', checkvarnames, 'found', datanames, '. RooDataSet will be updated.')
         fout.Close()
 
     def get_dataset(self, dataname, varnames = None, update = False, suffix = '', selection = None) :
@@ -614,7 +653,7 @@ class DataLibrary(object) :
             if dataset:
                 return dataset
 
-        print 'Making RooDataSet for', dataname
+        print('Making RooDataSet for', dataname)
 
         selectedtreefile = self.selected_file_name(dataname, True, suffix)
         datasetname = dataname + suffix
@@ -626,7 +665,7 @@ class DataLibrary(object) :
                                   **dict((var, variables[var]) for var in varnames))
 
         fname = self.dataset_file_name(dataname, suffix)
-        print 'Saving to', fname
+        print('Saving to', fname)
         fout = ROOT.TFile.Open(fname, 'recreate')
         dataset.Write()
         ROOT.TNamed('selection', selection).Write()
@@ -715,12 +754,12 @@ class DataLibrary(object) :
         successful = []
         failed = []
         for dataset in self.datasets() :
-            print 'Check', dataset
+            print('Check', dataset)
             if not self.check_dataset(dataset) :
-                print 'Failed!'
+                print('Failed!')
                 failed.append(dataset)
             else :
-                print 'OK'
+                print('OK')
                 successful.append(dataset)
             print
         return successful, failed
@@ -823,7 +862,7 @@ class BinnedFitData(object) :
         self.meanvals = {}
         self.datahist = None
 
-        #print self.selections
+        #print(self.selections)
 
         if get :
             self.get(update)

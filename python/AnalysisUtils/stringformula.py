@@ -18,7 +18,7 @@ class StringFormula(str):
         '''Get all named variables used in this formula.'''
         return re.findall('[A-Za-z_][A-Za-z0-9_]*', self)
 
-    def substitute_variables(self, recursive = True, **kwargs):
+    def substitute_variables(self, recursive = True, maxdepth = 1000, **kwargs):
         '''Substitute named variables for other terms.'''
         if recursive:
             for fromval, toval in kwargs.items():
@@ -26,17 +26,27 @@ class StringFormula(str):
                     raise ValueError('Circular substition: {0} -> {1} -> {0}!'.format(fromval, toval))
             prevform = StringFormula(self)
             newform = self.substitute_variables(False, **kwargs)
-            while newform != prevform:
+            i = 0
+            while newform != prevform and i < maxdepth:
                 prevform = newform
                 newform = newform.substitute_variables(False, **kwargs)
+                i += 1
+            if i == maxdepth:
+                raise ValueError(('Exceeded max recursion depth substituting {0!r} using {1!r}\n'\
+                                  'Current prevform: {2}\nnewform: {3}').format(self, kwargs, prevform, newform))
             return newform
 
         subform = StringFormula(self)
-        # This isn't entirely reliable, as, eg, one of the earlier subsitutions may contain
-        # one of the later substitutions as a sub-string. Use of compiler.parse could be
-        # safer, but more complicated.
+        # Think this should behave as it matches the exact, full variable name.
         for var, sub in sorted(kwargs.items(), key = lambda x : len(x[0]), reverse = True):
-            subform = StringFormula(subform.replace(var, '(' + sub + ')'))
+            # Check if it's a single variable, if not add parentheses
+            if not re.match('^[A-Za-z_][A-Za-z0-9_]*$', sub):
+                sub = '(' + sub + ')'
+            # Is at the start of the string or preceded by a non-variable name character.
+            for start, newstart in ('^', ''), ('(?P<newstart>[^A-Za-z0-9_])', '\g<newstart>') :
+                # Is at the end of the string or followed by a non-variable name character.
+                for end, newend in ('$', ''), ('(?P<newend>[^A-Za-z0-9_])', '\g<newend>'):
+                    subform = StringFormula(re.sub(start + var + end, newstart + sub + newend, subform))
         return subform
 
 for func, op in (('add', '+'),
