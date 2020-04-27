@@ -257,7 +257,7 @@ class DataChain(ROOT.TChain):
         usevariables = list(variables)
         if kwargs['selection']:
             usevariables += [kwargs['selection']]
-        kwargs['friends'] = [friend.clone_for_variables(variables) 
+        kwargs['friends'] = [friend.clone_for_variables(variables, selection = kwargs['selection']) 
                              for friend in self.get_used_friends(usevariables).values()]
         kwargs['addfriends'] = False
         kwargs['ignorefriends'] = []
