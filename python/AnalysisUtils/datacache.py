@@ -64,7 +64,7 @@ class DataCache(object):
     def debug_msg(self, *msg):
         print('DEBUG:', self.name + ':', *msg)
 
-    def null_msg(self, msg):
+    def null_msg(self, *msg):
         pass
 
     def load(self):
