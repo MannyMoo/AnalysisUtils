@@ -250,18 +250,18 @@ class DataChain(ROOT.TChain):
             args['friends'] = list(friends)
         return DataChain(**args)
 
-    def clone_for_variables(self, variables = None, ignoreperfile = False, suffix = '', **kwargs):
+    def clone_for_variables(self, varnames = None, variables = [], ignoreperfile = False, suffix = '', **kwargs):
         '''Get a clone of this DataChain keeping only the friends and variable definitions needed
         for the given variables, and the selection if set/given. This is useful for caching the 
         DataChain keeping only the info needed for certain variables.'''
-        if None == variables:
-            variables = self.varnames
+        if None == varnames:
+            varnames = self.varnames
         kwargs['selection'] = kwargs.get('selection', self.selection)
-        kwargs['variables'] = {var : self.variables[var] for var in variables}
-        usevariables = list(variables)
+        kwargs['variables'] = {var : self.variables[var] for var in varnames}
+        usevariables = list(varnames) + list(variables)
         if kwargs['selection']:
             usevariables += [kwargs['selection']]
-        kwargs['friends'] = [friend.clone_for_variables(variables, selection = kwargs['selection']) 
+        kwargs['friends'] = [friend.clone_for_variables(varnames, variables, selection = kwargs['selection']) 
                              for friend in self.get_used_friends(usevariables).values()]
         kwargs['addfriends'] = False
         kwargs['ignorefriends'] = []
@@ -270,7 +270,10 @@ class DataChain(ROOT.TChain):
     clone_for_cache = clone_for_variables
 
     def __eq__(self, other):
-        return self.__dict__ == other.__dict__
+        try:
+            return self.__dict__ == other.__dict__
+        except AttributeError:
+            return False
 
     def Show(self, n):
         '''Show the contents of entry n, also for friend trees.'''
@@ -753,6 +756,12 @@ class DataLibrary(object) :
         data.parallel_filter(outputdir = outputdir, outputname = outputname, selection = selection,
                              nthreads = nthreads, zfill = zfill, overwrite = overwrite,
                              ignorefriends = ignorefriends, noutputfiles = noutputfiles)
+
+    def cache_directory(self):
+        '''Get the directory for saving caches.'''
+        return os.path.join(self.datasetdir, self.name + '_Cache')
+
+    #def get_cache(self, 
 
 class BinnedFitData(object) :
     '''Bin a RooDataSet in one or two variables and make RooDataHists of another variable in those bins.'''
