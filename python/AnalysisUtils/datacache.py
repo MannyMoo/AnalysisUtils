@@ -193,7 +193,7 @@ class DataCache(object):
     def retrieve(self):
         '''Retrieved the cached values from the file. Returns None if they should be updated.'''
         self.debug_msg('retrieve')
-        fout = self.open_file(self.fname)
+        fout = self.open_file()
         if not fout or fout.IsZombie():
             self.debug_msg('file is None or zombie, return None')
             return None

@@ -25,7 +25,7 @@ def __init__(self, name, option = '', ftitle = '', compress = 1):
     if self.IsZombie():
         return
     # Not a local file, or read mode.
-    if ':/' in name or not option or option == 'read':
+    if ':/' in name or not option or option.lower() == 'read':
         return
     perm = getperm(name)
     if not perm:
