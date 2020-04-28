@@ -9,7 +9,7 @@ from AnalysisUtils.treeutils import make_chain, set_prefix_aliases, check_formul
 from array import array
 from copy import deepcopy
 from multiprocessing import Pool
-from AnalysisUtils.stringformula import NamedFormulae, StringFormula
+from AnalysisUtils.stringformula import NamedFormula, NamedFormulae, StringFormula
 from AnalysisUtils.datacache import DataCache
 
 def _is_ok(tree, fout, selection):
@@ -61,7 +61,7 @@ class DataChain(ROOT.TChain):
             self.files = list(files)
         if not self.files and zombiewarning:
             print('ERROR: constructing DataChain {0}: no files given!'.format(self.name), file = sys.stderr)
-        self.variables = NamedFormulae(variables)
+        self.variables = NamedFormulae({k : NamedFormula(v, name = k) for k, v in variables.items()})
         self.varnames = varnames
         self.selection = selection
         self.ignorecompilefails = ignorecompilefails
@@ -687,7 +687,7 @@ class DataLibrary(object) :
         mergeddata = self.get_data(datasetnames[0], addfriends = False)
         mergeddata.GetEntries()
         mergeddata.mergeddatasets = []
-        friends = {friend.name[len(mergeddata.name)+1:] : friend for friend in datasets[0].friends}
+        friends = {friend.name[len(mergeddata.name)+1:] : friend for friend in datasets[0].friends.values()}
         for friend in friends.values():
             friend.GetEntries()
             friend.mergeddatasets = []
@@ -696,7 +696,7 @@ class DataLibrary(object) :
             ds = self.get_data(dataset.name, addfriends = False)
             mergeddata.Add(ds)
             mergeddata.mergeddatasets.append(ds)
-            for friend in dataset.friends:
+            for friend in dataset.friends.values():
                 _name = friend.name[len(ds.name)+1:]
                 friends[_name].Add(friend)
                 friends[_name].mergeddatasets.append(friend)
