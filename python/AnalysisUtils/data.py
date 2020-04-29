@@ -96,7 +96,8 @@ class DataChain(ROOT.TChain):
             self.Add(f)
 
         for varname, varinfo in self.variables.items():
-            self.SetAlias(varname, varinfo['formula'])
+            if varname != varinfo['formula']:
+                self.SetAlias(varname, varinfo['formula'])
 
         self.loadcode = self.LoadTree(0)
         if self.is_ok(self.zombiewarning):
@@ -250,19 +251,41 @@ class DataChain(ROOT.TChain):
             args['friends'] = list(friends)
         return DataChain(**args)
 
-    def clone_for_variables(self, varnames = None, variables = [], ignoreperfile = False, suffix = '', **kwargs):
+    def clone_for_variables(self, variables = [], ignoreperfile = False, suffix = '', **kwargs):
         '''Get a clone of this DataChain keeping only the friends and variable definitions needed
         for the given variables, and the selection if set/given. This is useful for caching the 
         DataChain keeping only the info needed for certain variables.'''
-        if None == varnames:
-            varnames = self.varnames
+        if not variables:
+            variables = self.varnames
         kwargs['selection'] = kwargs.get('selection', self.selection)
-        kwargs['variables'] = {var : self.variables[var] for var in varnames}
-        usevariables = list(varnames) + list(variables)
+        # Need to expand out the formulae cause not all variables are copied.
+        # The alternative would be to somehow work out all the aliases that
+        # the formulae use and make sure to copy them.
+        kwargs['variables'] = {}
+        usevariables = []
+        for variable in variables:
+            if isinstance(variable, str):
+                # Named variable we know about.
+                if variable in self.variables:
+                    variable = self.variables[variable]
+                    variable = variable.copy(formula = self.expand_formula(variable.formula))
+                    kwargs['variables'][variable.name] = variable
+                # A string formula.
+                else:
+                    usevariables.append(variable)
+            # A NamedFormula instance.
+            else:
+                variable.formula = self.expand_formula(variable.formula)
+                kwargs['variables'][variable.name] = variable
+        # Update the list of variables for copying friends, so the formulae don't need expanding again.
+        variables = usevariables + kwargs['variables'].values()
+        for name, var in kwargs['variables'].items():
+            usevariables.append(var.formula)
+        
         if kwargs['selection']:
             usevariables += [kwargs['selection']]
-        kwargs['friends'] = [friend.clone_for_variables(varnames, variables, selection = kwargs['selection']) 
-                             for friend in self.get_used_friends(usevariables).values()]
+        kwargs['friends'] = [friend.clone_for_variables(variables, selection = kwargs['selection']) 
+                             for friend in self.get_used_friends(expand = False, *usevariables).values()]
         kwargs['addfriends'] = False
         kwargs['ignorefriends'] = []
         return self.clone(ignoreperfile = ignoreperfile, suffix = suffix, keepfriends = False, **kwargs)
@@ -285,18 +308,21 @@ class DataChain(ROOT.TChain):
 
     def draw(self, var, varY = None, nbins = None, nbinsY = None, name = None, suffix = '',
              selection = None, extrasel = None, opt = ''):
-        '''Make a histo of a variable or 2D histo of two variables. If this dataset has a 
+        '''Make a histo of a variable or 2D histo of two variables. 'var' and 'varY' can be 
+        the names of known variables or NamedFormula instances. If this dataset has a 
         default selection it's used if one isn't given.'''
+        var = self.variables.get_var(var)
+        varY = self.variables.get_var(varY)
         if None == selection:
             selection = self.selection
         if extrasel:
             selection = str(StringFormula(selection) & StringFormula(extrasel))
         if varY:
             h = self.variables.histo2D(var, varY, name = name, nbins = nbins, nbinsY = nbinsY, suffix = suffix)
-            self.Draw('{2} : {1} >> {0}'.format(h.GetName(), var, varY), selection, opt)
+            self.Draw('{2} : {1} >> {0}'.format(h.GetName(), var.name, varY.name), selection, opt)
         else:
             h = self.variables.histo(var, name = name, nbins = nbins, suffix = suffix)
-            self.Draw('{1} >> {0}'.format(h.GetName(), var), selection, opt)
+            self.Draw('{1} >> {0}'.format(h.GetName(), var.name), selection, opt)
         return h
 
     def dataset_file_name(self):
@@ -512,22 +538,78 @@ class DataChain(ROOT.TChain):
     def expand_formula(self, formula):
         '''Get the fully expanded formula, substituting out any aliases.'''
         aliases = self.get_aliases()
-        return StringFormula(formula).substitute_variables(**aliases)
+        return str(StringFormula(formula).substitute_variables(**aliases))
 
-    def get_used_friends(self, variable, *variables):
-        '''Get the friend trees used in the variable formula.'''
+    def get_used_friends(self, variable, *variables, **kwargs):
+        '''Get the friend trees used in the variable formula. Expands out the variables
+        unless expand = False is given.'''
         if variables:
             friends = self.get_used_friends(variable)
             for var in variables:
                 friends.update(self.get_used_friends(var))
             return friends
-        variable = self.expand_formula(variable)
+        if kwargs.get('expand', True):
+            variable = StringFormula(self.expand_formula(variable))
+        else:
+            variable = StringFormula(variable)
         branches = variable.named_variables()
         friends = {}
         for name, friend in self.friends.items():
             if any(br in friend.GetListOfBranches() for br in branches):
                 friends[name] = friend
         return friends
+
+    def cache_directory(self, mkdir = True):
+        '''Get the directory for saving caches.'''
+        cachedir = os.path.join(self.datasetdir, self.name + '_Cache')
+        if mkdir and not os.path.exists(cachedir):
+            os.makedirs(cachedir)
+        return cachedir
+
+    def cache_file(self, name, mkdir = True):
+        '''Get the DataCache file name.'''
+        return os.path.join(self.cache_directory(mkdir), name + '.root')
+
+    def get_cache(self, name, names, function, variables = [], selection = None, **kwargs):
+        '''Get a DataCache that uses this tree and the given function. The first argument to the function
+        should be the tree itself. 'kwargs' is used for the DataCache constructor.'''
+        if variables or None != selection:
+            clonekwargs = dict(variables = variables)
+            if None != selection:
+                clonekwargs['selection'] = selection
+            tree = self.clone_for_variables(**clonekwargs)
+        else:
+            tree = self
+        args = list(kwargs.get('args', []))
+        args.insert(0, tree)
+        kwargs['args'] = args
+        return DataCache(name, self.cache_file(name), names, function, **kwargs)
+
+    def histo_cache(self, variable, variableY = None, name = None, suffix = '', 
+                    selection = None, extrasel = None, **kwargs):
+        '''Get a DataCache for plotting a 1D or 2D histo. 'name' is the name of the histo and cache;
+        'variable' & 'variableY' can be the names of the variables (which must be defined in the known
+        variables) or NamedFormula instances. If 'selection' isn't given, use the default selection. 
+        If 'extrasel' is given, append it to the selection. The selection is used as the weight, so 
+        can take non-binary values. 'kwargs' is passed to the DataCache constructor (eg, 'update').'''
+        if not name:
+            name = self.variables.get_var(variable).name
+            if variableY:
+                name = self.variables.get_var(variableY).name + '_vs_' + name
+        if suffix:
+            name += suffix
+        if not selection:
+            selection = self.selection
+        if extrasel:
+            selection = AND(selection, extrasel)
+        variables = [variable]
+        if variableY:
+            variables.append(variableY)
+        tree = self.clone_for_variables(variables = variables, selection = selection)
+        args = (variable, variableY, name)
+        def draw_histo(tree, variable, variableY, name):
+            return {name : tree.draw(variable, variableY, name = name)}
+        return tree.get_cache(name, [name], draw_histo, args = args, **kwargs)
 
 class DataLibrary(object) :
     '''Contains info on datasets and functions to retrieve them.'''
@@ -756,12 +838,6 @@ class DataLibrary(object) :
         data.parallel_filter(outputdir = outputdir, outputname = outputname, selection = selection,
                              nthreads = nthreads, zfill = zfill, overwrite = overwrite,
                              ignorefriends = ignorefriends, noutputfiles = noutputfiles)
-
-    def cache_directory(self):
-        '''Get the directory for saving caches.'''
-        return os.path.join(self.datasetdir, self.name + '_Cache')
-
-    #def get_cache(self, 
 
 class BinnedFitData(object) :
     '''Bin a RooDataSet in one or two variables and make RooDataHists of another variable in those bins.'''

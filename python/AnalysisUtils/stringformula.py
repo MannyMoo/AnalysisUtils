@@ -179,21 +179,28 @@ class NamedFormulae(dict):
             sel = sel & val.range_selection(usealiases)
         return sel
 
+    def get_var(self, name):
+        '''Get the variable of the given name. If name isn't a string (eg, is a NamedFormula or None),
+        return name.'''
+        if isinstance(name, str):
+            return self[name]
+        return name
+
     def histo_string(self, variable, name = None, nbins = None, usealias = True):
         '''Get the string to make a histo with TTree::Draw for the given variable name.'''
-        return self[variable].histo_string(name = name, nbins = nbins, usealias = usealias)
+        return self.get_var(variable).histo_string(name = name, nbins = nbins, usealias = usealias)
 
     def histo2D_string(self, variable, variableY, name = None, nbins = None, nbinsY = None, usealias = True):
         '''Get the string to make a 2D histo with TTree::Draw'''
-        return self[variable].histo2D_string(self[variableY], name = name, nbins = nbins, nbinsY = nbinsY,
-                                             usealias = usealias)
+        return self.get_var(variable).histo2D_string(self.get_var(variableY), name = name, nbins = nbins,
+                                                     nbinsY = nbinsY, usealias = usealias)
 
     def histo(self, variable, name = None, nbins = None, suffix = '', htype = ROOT.TH1F):
         '''Make a histo for the given variable with the given range.'''
-        return self[variable].histo(name = name, nbins = nbins, suffix = suffix, htype = htype)
+        return self.get_var(variable).histo(name = name, nbins = nbins, suffix = suffix, htype = htype)
 
     def histo2D(self, variable, variableY, name = None, nbins = None, nbinsY = None, suffix = '', 
                 htype = ROOT.TH2F):
         '''Make a 2D histo with variable on the x-axis and variableY on the y-axis.'''
-        return self[variable].histo2D(self[variableY], name = name, nbins = nbins, nbinsY = nbinsY,
-                                      suffix = suffix, htype = htype)
+        return self.get_var(variable).histo2D(self.get_var(variableY), name = name, nbins = nbins, nbinsY = nbinsY,
+                                              suffix = suffix, htype = htype)
