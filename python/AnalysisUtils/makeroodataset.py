@@ -99,7 +99,8 @@ def make_roodataset(dataname, datatitle, tree, nentries = -1, selection = '',
     if selection :
         print 'Applying selection', repr(selection)
         selvar = TreeFormula('selection', selection, tree)
-        
+        if not selvar.is_ok():
+            raise ValueError('Selection {0!r} didn\'t compile!'.format(selection))
     else :
         selvar = lambda : True
 
