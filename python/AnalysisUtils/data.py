@@ -611,6 +611,14 @@ class DataChain(ROOT.TChain):
             return {name : tree.draw(variable, variableY, name = name)}
         return tree.get_cache(name, [name], draw_histo, args = args, **kwargs)
 
+    def get_efficiency(self, selection = None, extrasel = None):
+        '''Get the efficiency of the given selection. If one isn't given, use the default selection.'''
+        if None == selection:
+            selection = self.selection
+        if extrasel:
+            selection = AND(selection, extrasel)
+        return float(self.GetEntries(selection))/self.GetEntries()
+
 class DataLibrary(object) :
     '''Contains info on datasets and functions to retrieve them.'''
 
