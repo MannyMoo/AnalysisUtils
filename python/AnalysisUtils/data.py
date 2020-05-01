@@ -5,12 +5,13 @@ from AnalysisUtils.RooFit import RooFit
 import os, ROOT, pprint, cppyy, glob, re, multiprocessing, datetime, sys
 from AnalysisUtils.makeroodataset import make_roodataset, make_roodatahist
 from AnalysisUtils.treeutils import make_chain, set_prefix_aliases, check_formula_compiles, is_tfile_ok, copy_tree,\
-    TreeBranchAdder, tree_loop
+    TreeBranchAdder, tree_loop, TreeFormula
 from array import array
 from copy import deepcopy
 from multiprocessing import Pool
 from AnalysisUtils.stringformula import NamedFormula, NamedFormulae, StringFormula
 from AnalysisUtils.datacache import DataCache
+from AnalysisUtils.selection import AND, OR
 
 def _is_ok(tree, fout, selection):
     '''Check if a TTree has been copied OK to the output file.'''
@@ -611,14 +612,79 @@ class DataChain(ROOT.TChain):
             return {name : tree.draw(variable, variableY, name = name)}
         return tree.get_cache(name, [name], draw_histo, args = args, **kwargs)
 
-    def get_efficiency(self, selection = None, extrasel = None):
+    def get_efficiency(self, passselection, selection = None, extrasel = None):
         '''Get the efficiency of the given selection. If one isn't given, use the default selection.'''
+        selection = self.get_selection(selection, extrasel)
+        passselection = AND(passselection, selection)
+        return float(self.GetEntries(passselection))/self.GetEntries(selection)
+
+    def plot_efficiency(self, name, passselection, variable, variableY = None, weight = None, drawopt = '', 
+                        selection = None, extrasel = None, htype = ROOT.TEfficiency, efflabel = 'Efficiency'):
+        '''Plot the efficiency of 'passselection' vs 'variable', optionally 2D vs 'variableY'. If selection
+        is None, the default selection is used as the base selection. If extrasel is given, this is added
+        to the base selection selection. The efficiency is:
+        N(passselection && selection && extrasel)/N(selection && extrasel).'''
+        selection = self.get_selection(selection, extrasel)
+        passselection = AND(passselection, selection)
+        variable = self.variables.get_var(variable)
+        variableY = self.variables.get_var(variableY)
+        variables = [TreeFormula('xvar', variable.formula, self)]
+        if variableY:
+            heff = self.variables.histo2D(variable, variableY, name = name, htype = htype)
+            variables.append(TreeFormula('yvar', variableY.formula, self))
+        else:
+            heff = self.variables.histo(variable, name = name, htype = htype)
+        passvar = TreeFormula('passsel', passselection, self)
+        if weight:
+            weightvar = TreeFormula('weightvar', weight, self)
+            fill = lambda : heff.FillWeighted(bool(passvar()), weightvar(), *[v() for v in variables])
+        else:
+            weightvar = lambda : 1
+            fill = lambda : heff.FillWeighted(bool(passvar()), 1., *[v() for v in variables])
+        for i in self.loop(selection):
+            try:
+                fill()
+            except:
+                print('DataChain.plot_efficiency: exception at entry', i, file = sys.stderr)
+                print('Selection:', selection, 'pass selection:', passelection, 'variable:', variable,
+                      'variableY:', variableY)
+                raise
+        if not variableY:
+            painted = heff.CreateGraph()
+            painted.GetYaxis().SetTitle(efflabel)
+        else:
+            painted = heff.CreateHistogram()
+            variableY.set_y_title(painted)
+            painted.GetZaxis().SetTitle(efflabel)
+            # Don't know why 2D TEfficiencies don't set errors, maybe cause they're asymmetric.
+            for ix in xrange(1, painted.GetNbinsX()+1) :
+                for iy in xrange(1, painted.GetNbinsY()+1) :
+                    ibin = heff.GetGlobalBin(ix, iy)
+                    err = (heff.GetEfficiencyErrorLow(ibin)+heff.GetEfficiencyErrorUp(ibin))/2.
+                    painted.SetBinError(ix, iy, err)
+        painted.SetName(name + '_painted')
+        variable.set_x_title(painted)
+        painted.Draw(drawopt)
+        return heff, painted
+            
+    def get_selection(self, selection = None, extrasel = None):
+        '''Get the selection for this TTree. If no selection is given, the default is used. If 'extrasel'
+        is given, it's appended to the selection.'''
         if None == selection:
             selection = self.selection
         if extrasel:
             selection = AND(selection, extrasel)
-        return float(self.GetEntries(selection))/self.GetEntries()
+        return selection
 
+    def loop(self, selection = None, extrasel = None):
+        '''Loop over entries in the TTree passing the given selection. If none is given, the default selection
+        is used.'''
+        selection = self.get_selection(selection, extrasel)
+        return tree_loop(self)
+
+    def __iter__(self):
+        return self.loop()
+        
 class DataLibrary(object) :
     '''Contains info on datasets and functions to retrieve them.'''
 
