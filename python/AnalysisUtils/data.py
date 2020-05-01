@@ -273,7 +273,7 @@ class DataChain(ROOT.TChain):
                     kwargs['variables'][variable.name] = variable
                 # A string formula.
                 else:
-                    usevariables.append(variable)
+                    usevariables.append(self.expand_formula(variable))
             # A NamedFormula instance.
             else:
                 variable.formula = self.expand_formula(variable.formula)
@@ -599,10 +599,7 @@ class DataChain(ROOT.TChain):
                 name = self.variables.get_var(variableY).name + '_vs_' + name
         if suffix:
             name += suffix
-        if not selection:
-            selection = self.selection
-        if extrasel:
-            selection = AND(selection, extrasel)
+        selection = self.get_selection(selection, extrasel)
         variables = [variable]
         if variableY:
             variables.append(variableY)
@@ -610,7 +607,7 @@ class DataChain(ROOT.TChain):
         args = (variable, variableY, name)
         def draw_histo(tree, variable, variableY, name):
             return {name : tree.draw(variable, variableY, name = name)}
-        return tree.get_cache(name, [name], draw_histo, args = args, **kwargs)
+        return tree.get_cache(name + '_cache', [name], draw_histo, args = args, **kwargs)
 
     def get_efficiency(self, passselection, selection = None, extrasel = None):
         '''Get the efficiency of the given selection. If one isn't given, use the default selection.'''
@@ -666,6 +663,25 @@ class DataChain(ROOT.TChain):
         variable.set_x_title(painted)
         painted.Draw(drawopt)
         return heff, painted
+
+    def efficiency_plot_cache(self, name, passselection, variable, variableY = None, weight = None, drawopt = '', 
+                              selection = None, extrasel = None, htype = ROOT.TEfficiency, efflabel = 'Efficiency',
+                              **kwargs):
+        '''Make a cache for an efficiency plot made using plot_efficency. 'kwargs' is passed to get_cache.'''
+        selection = self.get_selection(selection, extrasel)
+        variables = [variable, selection]
+        if variableY:
+            variables.append(variableY)
+        passselection = self.expand_formula(passselection)
+        variables.append(passselection)
+        tree = self.clone_for_variables(variables = variables, selection = selection)
+        def plot_eff(tree, **kwargs):
+            heff, hpainted = tree.plot_efficiency(**kwargs)
+            return {kwargs['name'] : heff, kwargs['name'] + '_painted' : hpainted}
+        return tree.get_cache(name + '_cache', [name, name + '_painted'], plot_eff,
+                              kwargs = dict(name = name, passselection = passselection, variable = variable,
+                                            variableY = variableY, weight = weight, drawopt = drawopt,
+                                            htype = htype, efflabel = efflabel))
             
     def get_selection(self, selection = None, extrasel = None):
         '''Get the selection for this TTree. If no selection is given, the default is used. If 'extrasel'
