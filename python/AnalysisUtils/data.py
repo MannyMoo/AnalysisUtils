@@ -48,12 +48,12 @@ class DataChain(ROOT.TChain):
 
     _ctorargs = ('name', 'tree', 'files', 'variables', 'varnames', 'selection',
                  'datasetdir', 'ignorecompilefails', 'aliases', 'friends', 'addfriends',
-                 'ignorefriends', 'sortfiles', 'zombiewarning', 'build')
+                 'ignorefriends', 'sortfiles', 'zombiewarning', 'build', 'ctime')
 
     def __init__(self, name, tree, files, variables = {}, varnames = (), selection = '',
                  datasetdir = None, ignorecompilefails = False, aliases = {},
                  friends = [], addfriends = True, ignorefriends = [], sortfiles = True,
-                 zombiewarning = True, build = True) :
+                 zombiewarning = True, build = True, ctime = None) :
         self.name = name
         self.tree = tree
         if sortfiles:
@@ -78,7 +78,7 @@ class DataChain(ROOT.TChain):
         self.sortfiles = sortfiles
         self.zombiewarning = zombiewarning
         self.build = build
-        self.ctime = None
+        self.ctime = ctime
         self.loadcode = None
 
         super(DataChain, self).__init__(tree)
@@ -107,17 +107,19 @@ class DataChain(ROOT.TChain):
         for friend in self.initfriends:
             self.AddFriend(friend)
 
-        if not self.addfriends:
-            self.built = True
-            return
-
-        self.add_auto_friends()
+        if self.addfriends:
+            self.add_auto_friends()
 
         self.built = True
 
         if self.loadcode < 0:
             return
 
+        if not self.ctime:
+            self.update_ctime()
+
+    def update_ctime(self):
+        '''Update the creation time from the TFiles.'''
         tdir = self.GetFile()
         if not tdir:
             return
@@ -336,11 +338,22 @@ class DataChain(ROOT.TChain):
         else:
             h = self.variables.histo(var, name = name, nbins = nbins, suffix = suffix)
             self.Draw('{1} >> {0}'.format(h.GetName(), var.name), selection, opt)
+        h.SetDirectory(None)
         return h
 
     def dataset_file_name(self):
         '''Get the name of the file containing the RooDataset.'''
         return os.path.join(self.datasetdir, self.name + '_Dataset.root')
+
+    def get_friend(self, name):
+        '''Get a friend with the given name, automatically prefixing with this tree's name if necessary.'''
+        if name in self.friends:
+            return self.friends[name]
+        if not name.startswith(self.name):
+            name = self.name + '_' + name
+            if name in self.friends:
+                return self.friends[name]
+        return None
 
     def add_friend_tree(self, friendname, adderkwargs, treename = None, perfile = False,
                         makedir = True, zfill = 4):
@@ -350,6 +363,12 @@ class DataChain(ROOT.TChain):
           the tree argument)
         treename = name of the friend TTree (default friendname + 'Tree')
         makedir & zfill are passed to frield_file_name.'''
+        # Remove the friend if it's currently in the friends list.
+        if self.get_friend(friendname):
+            tree = self.clone(ignorefriends = self.ignorefriends + [friendname])
+            return tree.add_friend_tree(friendname = friendname, adderkwargs = adderkwargs, treename = treename,
+                                        perfile = perfile, makdedir = makedir, zfill = zfill)
+
         if None == treename:
             treename = friendname + 'Tree'
         fout = ROOT.TFile.Open(self.friend_file_name(friendname, treename,
@@ -631,7 +650,7 @@ class DataChain(ROOT.TChain):
         args = (variable, variableY, name)
         def draw_histo(tree, variable, variableY, name):
             return {name : tree.draw(variable, variableY, name = name)}
-        return tree.get_cache(name + '_cache', [name], draw_histo, args = args, **kwargs)
+        return tree.get_cache(name, [name], draw_histo, args = args, **kwargs)
 
     def get_efficiency(self, passselection, selection = None, extrasel = None):
         '''Get the efficiency of the given selection. If one isn't given, use the default selection.'''
@@ -655,6 +674,7 @@ class DataChain(ROOT.TChain):
             variables.append(TreeFormula('yvar', variableY.formula, self))
         else:
             heff = self.variables.histo(variable, name = name, htype = htype)
+        heff.SetDirectory(None)
         passvar = TreeFormula('passsel', passselection, self)
         if weight:
             weightvar = TreeFormula('weightvar', weight, self)
@@ -675,6 +695,7 @@ class DataChain(ROOT.TChain):
             painted.GetYaxis().SetTitle(efflabel)
         else:
             painted = heff.CreateHistogram()
+            painted.SetDirectory(None)
             variableY.set_y_title(painted)
             painted.GetZaxis().SetTitle(efflabel)
             # Don't know why 2D TEfficiencies don't set errors, maybe cause they're asymmetric.
@@ -704,7 +725,7 @@ class DataChain(ROOT.TChain):
         return tree.get_cache(name, [name, name + '_painted'], plot_eff,
                               kwargs = dict(name = name, passselection = passselection, variable = variable,
                                             variableY = variableY, weight = weight, drawopt = drawopt,
-                                            htype = htype, efflabel = efflabel))
+                                            htype = htype, efflabel = efflabel), **kwargs)
             
     def get_selection(self, selection = None, extrasel = None):
         '''Get the selection for this TTree. If no selection is given, the default is used. If 'extrasel'
@@ -719,7 +740,7 @@ class DataChain(ROOT.TChain):
         '''Loop over entries in the TTree passing the given selection. If none is given, the default selection
         is used.'''
         selection = self.get_selection(selection, extrasel)
-        return tree_loop(self)
+        return tree_loop(self, selection)
 
     def __iter__(self):
         return self.loop()

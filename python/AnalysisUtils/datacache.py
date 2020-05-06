@@ -37,7 +37,10 @@ def load(tfile, name, fileresident = False):
         except AttributeError:
             pass
     if isinstance(obj, ROOT.TNamed) and obj.GetTitle().startswith('pkl:'):
-        obj = pickle.loads(obj.GetTitle()[4:])
+        try:
+            obj = pickle.loads(obj.GetTitle()[4:])
+        except:
+            raise ValueError('Failed to unpickle object {0!r}!'.format(name))
     return obj
 
 class DataCache(object):
@@ -45,10 +48,11 @@ class DataCache(object):
 
     def __init__(self, name, fname, names, function, args = (), kwargs = {}, update = False, debug = False,
                  cachestdout = True, printstdout = True):
-        super(DataCache, self).__setattr__('names', set(names))
+        super(DataCache, self).__setattr__('_names', set(names))
+        self.names = names
         self.name = name
         for prop in 'ctime', 'stdout', 'stderr':
-            self.names.add(prop)
+            self._names.add(prop)
         self.fname = fname
         self.function = function
         self.args = tuple(args)
@@ -93,12 +97,12 @@ class DataCache(object):
     values = property(fget = __get_vals, fset = lambda self, val: setattr(self, '_vals', val))
 
     def __getattr__(self, attr):
-        if attr in self.names:
+        if attr in self._names:
             return self.values[attr]
         return super(DataCache, self).__getattribute__(attr)
 
     def __setattr__(self, attr, val):
-        if attr in self.names:
+        if attr in self._names:
             self.values[attr] = val
         super(DataCache, self).__setattr__(attr, val)
 
@@ -137,11 +141,12 @@ class DataCache(object):
     def set_vals(self, vals):
         '''Set the values for the cached items.'''
         self.debug_msg('set_vals')
+        self.debug_msg('got vals:', vals)
         if not isinstance(vals, dict):
             raise ValueError('The values for data cache {0!r} must be a dict! Got: {1!r}'\
                              .format(self.fname, vals))
-        if set(vals.keys()) != self.names:
-            raise ValueError('Expected names {0}, but got {1}'.format(self.names, vals.keys()))
+        if set(vals.keys()) != self._names:
+            raise ValueError('Expected names {0}, but got {1}'.format(self._names, vals.keys()))
         self._vals = vals
         self.debug_msg('set_vals complete')
         return vals
@@ -160,9 +165,9 @@ class DataCache(object):
         '''Save to file.'''
         self.debug_msg('write')
         fout = self.open_file('recreate')
-        for name in self.names:
+        for name in self._names:
             write(fout, name, self._vals[name])
-        write(fout, 'names', self.names)
+        write(fout, 'names', self._names)
         # Could pickle the function itself, but that just stores its name anyway and forbids
         # functions defined in main, inline, or lambdas.
         write(fout, 'function', self.func_name())
@@ -198,7 +203,7 @@ class DataCache(object):
             self.debug_msg('file is None or zombie, return None')
             return None
         sortedargs = self.sorted_args()
-        for name, comp in dict(names = self.names, function = self.func_name(), args = sortedargs['pklargs'],
+        for name, comp in dict(names = self._names, function = self.func_name(), args = sortedargs['pklargs'],
                                kwargs = sortedargs['pklkwargs']).items():
             try:
                 obj = load(fout, name)
@@ -211,7 +216,7 @@ class DataCache(object):
                 self.debug_msg('return None')
                 return None
         vals = {}
-        for name in self.names:
+        for name in self._names:
             try:
                 vals[name] = load(fout, name)
             except ValueError:
@@ -226,6 +231,13 @@ class DataCache(object):
         self.set_vals(vals)
         self.debug_msg('retrieve complete')
         return vals
+
+    def get(self, obj):
+        '''Get a cached object by name or index.'''
+        if isinstance(obj, int):
+            obj = self.names[obj]
+        return getattr(self, obj)
+        
 
 if __name__ == '__main__':
     from ROOT import TRandom3
