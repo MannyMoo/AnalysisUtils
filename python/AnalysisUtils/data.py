@@ -111,10 +111,8 @@ class DataChain(ROOT.TChain):
             self.built = True
             return
 
-        friends = self.get_auto_friends(self.ignorefriends)
-        for friend in friends:
-            self.AddFriend(friend)
-        
+        self.add_auto_friends()
+
         self.built = True
 
         if self.loadcode < 0:
@@ -193,6 +191,12 @@ class DataChain(ROOT.TChain):
             if friend.is_ok(False):
                 friends.append(friend)
         return friends
+
+    def add_auto_friends(self, build = True):
+        '''Add friends automatically from the friends directory.'''
+        friends = self.get_auto_friends(self.ignorefriends, build)
+        for friend in friends:
+            self.AddFriend(friend)
 
     def friend_file_name(self, friendname, treename, number = None, makedir = False, zfill = 4) :
         '''Get the name of a file that will be automatically added as a friend to this dataset,
@@ -587,13 +591,17 @@ class DataChain(ROOT.TChain):
         '''Get the DataCache file name.'''
         return os.path.join(self.cache_directory(mkdir), name + '.root')
 
-    def get_cache(self, name, names, function, variables = [], selection = None, **kwargs):
+    def get_cache(self, name, names, function, variables = [], selection = None, ignorefriends = [], **kwargs):
         '''Get a DataCache that uses this tree and the given function. The first argument to the function
         should be the tree itself. 'kwargs' is used for the DataCache constructor.'''
-        if variables or None != selection:
-            clonekwargs = dict(variables = variables)
-            if None != selection:
-                clonekwargs['selection'] = selection
+        clonekwargs = {}
+        if variables:
+            clonekwargs['variables'] = variables
+        if None != selection:
+            clonekwargs['selection'] = selection
+        if ignorefriends:
+            clonekwargs['ignorefriends'] = ignorefriends
+        if clonekwargs:
             tree = self.clone_for_variables(**clonekwargs)
         else:
             tree = self
