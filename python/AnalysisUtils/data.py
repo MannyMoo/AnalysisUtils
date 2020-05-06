@@ -62,7 +62,7 @@ class DataChain(ROOT.TChain):
             self.files = list(files)
         if not self.files and zombiewarning:
             print('ERROR: constructing DataChain {0}: no files given!'.format(self.name), file = sys.stderr)
-        self.variables = NamedFormulae({k : NamedFormula(v, name = k) for k, v in variables.items()})
+        self.variables = NamedFormulae(variables)
         self.varnames = varnames
         self.selection = selection
         self.ignorecompilefails = ignorecompilefails
@@ -259,32 +259,40 @@ class DataChain(ROOT.TChain):
         if not variables:
             variables = self.varnames
         kwargs['selection'] = kwargs.get('selection', self.selection)
-        # Need to expand out the formulae cause not all variables are copied.
-        # The alternative would be to somehow work out all the aliases that
-        # the formulae use and make sure to copy them.
+        # Expand out all the variables and get any used aliases so these are kept.
         kwargs['variables'] = {}
         usevariables = []
+        usedaliases = {}
         for variable in variables:
             if isinstance(variable, str):
                 # Named variable we know about.
                 if variable in self.variables:
                     variable = self.variables[variable]
-                    variable = variable.copy(formula = self.expand_formula(variable.formula))
+                    subvar, _usedaliases = self.get_used_substitutions(variable.formula)
+                    usedaliases.update(_usedaliases)
                     kwargs['variables'][variable.name] = variable
+                    usevariables.append(subvar)
                 # A string formula.
                 else:
-                    usevariables.append(self.expand_formula(variable))
+                    subvar, _usedaliases = self.get_used_substitutions(variable)
+                    usedaliases.update(_usedaliases)
+                    usevariables.append(subvar)
             # A NamedFormula instance.
             else:
-                variable.formula = self.expand_formula(variable.formula)
+                subvar, _usedaliases = self.get_used_substitutions(variable.formula)
                 kwargs['variables'][variable.name] = variable
-        # Update the list of variables for copying friends, so the formulae don't need expanding again.
-        variables = usevariables + kwargs['variables'].values()
-        for name, var in kwargs['variables'].items():
-            usevariables.append(var.formula)
+                usedaliases.update(_usedaliases)
+                usevariables.append(subvar)
         
         if kwargs['selection']:
-            usevariables += [kwargs['selection']]
+            subvar, _usedaliases = self.get_used_substitutions(kwargs['selection'])
+            usevariables.append(subvar)
+            usedaliases.update(_usedaliases)
+
+        for name, alias in usedaliases.items():
+            if name in self.variables:
+                kwargs['variables'][name] = self.variables[name]
+
         kwargs['friends'] = [friend.clone_for_variables(variables, selection = kwargs['selection']) 
                              for friend in self.get_used_friends(expand = False, *usevariables).values()]
         kwargs['addfriends'] = False
@@ -350,6 +358,7 @@ class DataChain(ROOT.TChain):
             treeout.Fill()
         treeout.Write()
         fout.Close()
+        return True
 
     def selected_file_name(self, makedir = False) :
         '''Get the name of the file containing the TTree of range and selection
@@ -541,6 +550,13 @@ class DataChain(ROOT.TChain):
         aliases = self.get_aliases()
         return str(StringFormula(formula).substitute_variables(**aliases))
 
+    def get_used_substitutions(self, formula):
+        '''Get the fully expanded formula, substituting out any aliases. Returns the new formula and
+        used aliases.'''
+        aliases = self.get_aliases()
+        newform, used = StringFormula(formula).get_used_substitutions(**aliases)
+        return str(newform), used
+
     def get_used_friends(self, variable, *variables, **kwargs):
         '''Get the friend trees used in the variable formula. Expands out the variables
         unless expand = False is given.'''
@@ -643,7 +659,7 @@ class DataChain(ROOT.TChain):
                 fill()
             except:
                 print('DataChain.plot_efficiency: exception at entry', i, file = sys.stderr)
-                print('Selection:', selection, 'pass selection:', passelection, 'variable:', variable,
+                print('Selection:', selection, 'pass selection:', passselection, 'variable:', variable,
                       'variableY:', variableY)
                 raise
         if not variableY:
@@ -672,13 +688,12 @@ class DataChain(ROOT.TChain):
         variables = [variable, selection]
         if variableY:
             variables.append(variableY)
-        passselection = self.expand_formula(passselection)
         variables.append(passselection)
         tree = self.clone_for_variables(variables = variables, selection = selection)
         def plot_eff(tree, **kwargs):
             heff, hpainted = tree.plot_efficiency(**kwargs)
             return {kwargs['name'] : heff, kwargs['name'] + '_painted' : hpainted}
-        return tree.get_cache(name + '_cache', [name, name + '_painted'], plot_eff,
+        return tree.get_cache(name, [name, name + '_painted'], plot_eff,
                               kwargs = dict(name = name, passselection = passselection, variable = variable,
                                             variableY = variableY, weight = weight, drawopt = drawopt,
                                             htype = htype, efflabel = efflabel))

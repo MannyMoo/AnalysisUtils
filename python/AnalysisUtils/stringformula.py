@@ -20,25 +20,33 @@ class StringFormula(str):
 
     def substitute_variables(self, recursive = True, maxdepth = 1000, **kwargs):
         '''Substitute named variables for other terms.'''
+        newform, used = self.get_used_substitutions(recursive = recursive, maxdepth = maxdepth, **kwargs)
+        return newform
+
+    def get_used_substitutions(self, recursive = True, maxdepth = 1000, **kwargs):
+        '''Substitute named variables for other terms and return the new string and used substitions.'''
         if recursive:
             for fromval, toval in kwargs.items():
                 if toval in kwargs and kwargs[toval] == fromval:
                     raise ValueError('Circular substition: {0} -> {1} -> {0}!'.format(fromval, toval))
             prevform = StringFormula(self)
-            newform = self.substitute_variables(False, **kwargs)
+            newform, used = self.get_used_substitutions(False, **kwargs)
             i = 0
             while newform != prevform and i < maxdepth:
                 prevform = newform
-                newform = newform.substitute_variables(False, **kwargs)
+                newform, _used = newform.get_used_substitutions(False, **kwargs)
+                used.update(_used)
                 i += 1
             if i == maxdepth:
                 raise ValueError(('Exceeded max recursion depth substituting {0!r} using {1!r}\n'\
                                   'Current prevform: {2}\nnewform: {3}').format(self, kwargs, prevform, newform))
-            return newform
+            return newform, used
 
         subform = StringFormula(self)
+        prevform = subform
+        used = {}
         # Think this should behave as it matches the exact, full variable name.
-        for var, sub in sorted(kwargs.items(), key = lambda x : len(x[0]), reverse = True):
+        for var, sub in kwargs.items():
             # Check if it's a single variable, if not add parentheses
             if not re.match('^[A-Za-z_][A-Za-z0-9_]*$', sub):
                 sub = '(' + sub + ')'
@@ -47,7 +55,10 @@ class StringFormula(str):
                 # Is at the end of the string or followed by a non-variable name character.
                 for end, newend in ('$', ''), ('(?P<newend>[^A-Za-z0-9_])', '\g<newend>'):
                     subform = StringFormula(re.sub(start + var + end, newstart + sub + newend, subform))
-        return subform
+            if subform != prevform:
+                used[var] = sub
+                prevform = subform
+        return subform, used
 
 for func, op in (('add', '+'),
                  ('sub', '-'),
@@ -168,6 +179,16 @@ for arg, default in NamedFormula._optargs.items():
 
 class NamedFormulae(dict):
     '''A collection of NamedFormula instances.'''
+
+    def __init__(self, *args, **kwargs):
+        '''Copies arguments into new NamedFormula instances. Adds the option to initialise from a sequence
+        of NamedFormula instances.'''
+        try:
+            super(NamedFormulae, self).__init__({v.name : v for v in args[0]}, **kwargs)
+        except (IndexError, AttributeError):
+            super(NamedFormulae, self).__init__(*args, **kwargs)
+        for name, var in self.items():
+            self[name] = NamedFormula(var, name = name)
 
     def range_selection(self, usealiases = True):
         '''Get the range selection for all formulae.'''
