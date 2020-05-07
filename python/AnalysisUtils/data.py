@@ -5,7 +5,7 @@ from AnalysisUtils.RooFit import RooFit
 import os, ROOT, pprint, cppyy, glob, re, multiprocessing, datetime, sys
 from AnalysisUtils.makeroodataset import make_roodataset, make_roodatahist
 from AnalysisUtils.treeutils import make_chain, set_prefix_aliases, check_formula_compiles, is_tfile_ok, copy_tree,\
-    TreeBranchAdder, tree_loop, TreeFormula
+    TreeBranchAdder, tree_loop, TreeFormula, tree_mean, tree_iter
 from array import array
 from copy import deepcopy
 from multiprocessing import Pool
@@ -971,6 +971,25 @@ class DataLibrary(object) :
         data.parallel_filter(outputdir = outputdir, outputname = outputname, selection = selection,
                              nthreads = nthreads, zfill = zfill, overwrite = overwrite,
                              ignorefriends = ignorefriends, noutputfiles = noutputfiles)
+
+    def compare(self, other):
+        '''Compare with another DataChain and print differences.'''
+        for k, v in self.__dict__.items():
+            vo = other[k]
+            if vo != v:
+                print('self.{0}.{1} = {2!r}, other.{3}.{1} = {4!r}'.format(self.name, k, v, other.name, vo))
+
+    def get_functor(self, name, formula):
+        '''Get a TreeFormula instance with the given name and formula.'''
+        return TreeFormula(name, formula, self)
+
+    def mean(self, formula, weight = None, selection = None, extrasel = None):
+        '''Get the mean of the given formula.'''
+        return tree_mean(self, formula, self.get_selection(selection, extrasel), weight)
+
+    def formula_iter(self, formula, selection = None, extrasel = None):
+        '''Iterate over the formula values.'''
+        return tree_iter(self, formula, self.get_selection(selection, extrasel))
 
 class BinnedFitData(object) :
     '''Bin a RooDataSet in one or two variables and make RooDataHists of another variable in those bins.'''

@@ -219,6 +219,11 @@ class DataCache(object):
             if obj != comp:
                 self.debug_msg(name + " doesn't match what's in the file:\n" 
                                + "from args:\n{0!r}\nfrom file:\n{1!r}".format(comp, obj))
+                if self.debug and name == 'args' and obj[0].__class__ == 'DataChain' and obj[0] != comp[0]:
+                    ftree = obj[0]
+                    atree = obj[0]
+                    self.debug_msg('Compare DataChain from file to DataChain from args:')
+                    ftree.compare(atree)
                 self.debug_msg('return None')
                 return None
         vals = {}
