@@ -46,6 +46,9 @@ def load(tfile, name, fileresident = False):
 class DataCache(object):
     '''A class for caching the return values of a function.'''
 
+    doupdate = False
+    debug = False
+
     def __init__(self, name, fname, names, function, args = (), kwargs = {}, update = False, debug = False,
                  cachestdout = True, printstdout = True):
         super(DataCache, self).__setattr__('_names', set(names))
@@ -57,9 +60,12 @@ class DataCache(object):
         self.function = function
         self.args = tuple(args)
         self.kwargs = dict(kwargs)
-        self.doupdate = update
-        self.debug = debug
-        if not debug:
+        # If set, these override the global class variables.
+        if update:
+            self.doupdate = update
+        if debug:
+            self.debug = debug
+        if not self.debug:
             self.debug_msg = self.null_msg
         self.cachestdout = cachestdout
         self.printstdout = printstdout

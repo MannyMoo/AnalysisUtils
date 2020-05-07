@@ -714,10 +714,9 @@ class DataChain(ROOT.TChain):
                               **kwargs):
         '''Make a cache for an efficiency plot made using plot_efficency. 'kwargs' is passed to get_cache.'''
         selection = self.get_selection(selection, extrasel)
-        variables = [variable, selection]
+        variables = [variable, passselection]
         if variableY:
             variables.append(variableY)
-        variables.append(passselection)
         tree = self.clone_for_variables(variables = variables, selection = selection)
         def plot_eff(tree, **kwargs):
             heff, hpainted = tree.plot_efficiency(**kwargs)
