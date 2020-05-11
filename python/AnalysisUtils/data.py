@@ -659,7 +659,8 @@ class DataChain(ROOT.TChain):
         return float(self.GetEntries(passselection))/self.GetEntries(selection)
 
     def plot_efficiency(self, name, passselection, variable, variableY = None, weight = None, drawopt = '', 
-                        selection = None, extrasel = None, htype = ROOT.TEfficiency, efflabel = 'Efficiency'):
+                        selection = None, extrasel = None, htype = ROOT.TEfficiency, efflabel = 'Efficiency',
+                        variableZ = None):
         '''Plot the efficiency of 'passselection' vs 'variable', optionally 2D vs 'variableY'. If selection
         is None, the default selection is used as the base selection. If extrasel is given, this is added
         to the base selection selection. The efficiency is:
@@ -669,7 +670,11 @@ class DataChain(ROOT.TChain):
         variable = self.variables.get_var(variable)
         variableY = self.variables.get_var(variableY)
         variables = [TreeFormula('xvar', variable.formula, self)]
-        if variableY:
+        if variableZ:
+            heff = self.variables.histo3D(variable, variableY, variableZ, name = name, htype = htype)
+            variables.append(TreeFormula('yvar', variableY.formula, self))
+            variables.append(TreeFormula('zvar', variableZ.formula, self))
+        elif variableY:
             heff = self.variables.histo2D(variable, variableY, name = name, htype = htype)
             variables.append(TreeFormula('yvar', variableY.formula, self))
         else:
@@ -680,7 +685,6 @@ class DataChain(ROOT.TChain):
             weightvar = TreeFormula('weightvar', weight, self)
             fill = lambda : heff.FillWeighted(bool(passvar()), weightvar(), *[v() for v in variables])
         else:
-            weightvar = lambda : 1
             fill = lambda : heff.FillWeighted(bool(passvar()), 1., *[v() for v in variables])
         for i in self.loop(selection):
             try:
@@ -688,12 +692,22 @@ class DataChain(ROOT.TChain):
             except:
                 print('DataChain.plot_efficiency: exception at entry', i, file = sys.stderr)
                 print('Selection:', selection, 'pass selection:', passselection, 'variable:', variable,
-                      'variableY:', variableY)
+                      'variableY:', variableY, 'variableZ:', variableZ)
                 raise
-        if not variableY:
-            painted = heff.CreateGraph()
-            painted.GetYaxis().SetTitle(efflabel)
-        else:
+        if variableZ:
+            painted = ROOT.TH3D(heff.GetPassedHistogram())
+            painted.Divide(heff.GetTotalHistogram())
+            painted.SetName("efficiency")
+            painted.SetDirectory(None)
+            variableY.set_y_title(painted)
+            variableZ.set_z_title(painted)
+            for ix in xrange(1, painted.GetNbinsX()+1) :
+                for iy in xrange(1, painted.GetNbinsY()+1) :
+                    for iz in xrange(1, painted.GetNbinsZ()+1) :
+                        ibin = heff.GetGlobalBin(ix, iy, iz)
+                        err = (heff.GetEfficiencyErrorLow(ibin)+heff.GetEfficiencyErrorUp(ibin))/2.
+                        painted.SetBinError(ix, iy, iz, err)
+        elif variableY:
             painted = heff.CreateHistogram()
             painted.SetDirectory(None)
             variableY.set_y_title(painted)
@@ -704,6 +718,9 @@ class DataChain(ROOT.TChain):
                     ibin = heff.GetGlobalBin(ix, iy)
                     err = (heff.GetEfficiencyErrorLow(ibin)+heff.GetEfficiencyErrorUp(ibin))/2.
                     painted.SetBinError(ix, iy, err)
+        else:
+            painted = heff.CreateGraph()
+            painted.GetYaxis().SetTitle(efflabel)
         painted.SetName(name + '_painted')
         variable.set_x_title(painted)
         painted.Draw(drawopt)
@@ -711,20 +728,26 @@ class DataChain(ROOT.TChain):
 
     def efficiency_plot_cache(self, name, passselection, variable, variableY = None, weight = None, drawopt = '', 
                               selection = None, extrasel = None, htype = ROOT.TEfficiency, efflabel = 'Efficiency',
-                              **kwargs):
+                              variableZ = None, **kwargs):
         '''Make a cache for an efficiency plot made using plot_efficency. 'kwargs' is passed to get_cache.'''
         selection = self.get_selection(selection, extrasel)
         variables = [variable, passselection]
         if variableY:
             variables.append(variableY)
+        if variableZ:
+            variables.append(variableZ)
         tree = self.clone_for_variables(variables = variables, selection = selection)
         def plot_eff(tree, **kwargs):
             heff, hpainted = tree.plot_efficiency(**kwargs)
             return {kwargs['name'] : heff, kwargs['name'] + '_painted' : hpainted}
+        plotkwargs = dict(name = name, passselection = passselection, variable = variable,
+                          weight = weight, drawopt = drawopt, htype = htype, efflabel = efflabel)
+        if variableY:
+            plotkwargs['variableY'] = variableY
+        if variableZ:
+            plotkwargs['variableZ'] = variableZ
         return tree.get_cache(name, [name, name + '_painted'], plot_eff,
-                              kwargs = dict(name = name, passselection = passselection, variable = variable,
-                                            variableY = variableY, weight = weight, drawopt = drawopt,
-                                            htype = htype, efflabel = efflabel), **kwargs)
+                              kwargs = plotkwargs, **kwargs)
             
     def get_selection(self, selection = None, extrasel = None):
         '''Get the selection for this TTree. If no selection is given, the default is used. If 'extrasel'

@@ -166,6 +166,20 @@ class NamedFormula(dict):
         variableY.set_y_title(h)
         return h
 
+    def histo3D(self, variableY, variableZ, name = None, nbins = None, nbinsY = None, nbinsZ = None, suffix = '',
+                htype = ROOT.TH3F):
+        '''Make a 3D histo.'''
+        if None == name:
+            name = variableZ.name + '_vs_' + variableY.name + '_vs_' + self.name
+        name += suffix
+        h = htype(name, '', self._nbins(nbins), self.xmin, self.xmax,
+                  variableY._nbins(nbinsY), variableY.xmin, variableY.xmax,
+                  variableZ._nbins(nbinsZ), variableZ.xmin, variableZ.xmax)
+        self.set_x_title(h)
+        variableY.set_y_title(h)
+        variableZ.set_z_title(h)
+        return h
+
     def copy(self, **kwargs):
         '''Copy this NamedFormula and update with the given kwargs.'''
         return NamedFormula(self, **kwargs)
@@ -224,4 +238,11 @@ class NamedFormulae(dict):
                 htype = ROOT.TH2F):
         '''Make a 2D histo with variable on the x-axis and variableY on the y-axis.'''
         return self.get_var(variable).histo2D(self.get_var(variableY), name = name, nbins = nbins, nbinsY = nbinsY,
+                                              suffix = suffix, htype = htype)
+
+    def histo3D(self, variable, variableY, variableZ, name = None, nbins = None, nbinsY = None, nbinsZ = None, 
+                suffix = '', htype = ROOT.TH3F):
+        '''Make a 3D histo.'''
+        return self.get_var(variable).histo3D(self.get_var(variableY), self.get_var(variableZ), 
+                                              name = name, nbins = nbins, nbinsY = nbinsY, nbinsZ = nbinsZ,
                                               suffix = suffix, htype = htype)
