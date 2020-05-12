@@ -1,0 +1,145 @@
+'''Tools for weighting TTrees.'''
+
+from __future__ import print_function
+import ROOT, os
+from AnalysisUtils.selection import AND, OR
+from AnalysisUtils.Silence import Silence
+from AnalysisUtils.fit import normalised_exp_TF1
+
+def efficiency_weight(var):
+    '''Get a weight that's 1/var.'''
+    return '{0} > 0. ? 1./{0} : 0.'.format(var)
+
+def efficiency_weight2d(var, vary):
+    '''Get a weight that's 1/var/vary.'''
+    return '{0} > 0. && {1} > 0. ? 1./{0}/{1} : 0.'.format(var, vary)
+
+def count_zero_weights(weightedtree, weight, originaltree):
+    '''Get statistics on the number of entries in weightedtree with zero weights.'''
+    vals = {}
+    vals['noriginal'] = originaltree.GetEntries(originaltree.selection)
+    vals['nweighted'] = weightedtree.GetEntries(weightedtree.selection)
+    vals['sumweights'] = sum(weightedtree.formula_iter(weight))
+    vals['nzeroweights'] = weightedtree.GetEntries(AND(weightedtree.selection, '({0}) == 0.'.format(weight)))
+    return vals
+
+def get_chi2(hunb, hweighted):
+    '''Get the chi2, ndf, & P for the histos being consistent.'''
+    with Silence():
+        p = hunb.Chi2Test(hweighted, 'UW')
+        chi2 = hunb.Chi2Test(hweighted, 'UWCHI2')
+        chi2ndf = hunb.Chi2Test(hweighted, 'UWCHI2/NDF')
+    ndf = chi2/chi2ndf if chi2ndf > 0 else hunb.GetNbinsX()
+    return chi2, ndf, p
+
+def chi2box(hunb, hweighted):
+    '''Draw a box with the chi2, NDF & P for the histos being consistent.'''
+    chi2, ndf, prob = get_chi2(hunb, hweighted)
+    box = ROOT.TPaveText(0.6, 0.902, 1., 1., 'ndc')
+    box.SetBorderSize(0)
+    box.AddText('#chi^{3}/NDF = {0:5.1f}/{1}, P = {2:4.1f}%'.format(chi2, ndf, prob*100., '{2}'))
+    box.SetFillColor(ROOT.kWhite)
+    box.SetBorderSize(0)
+    box.Draw()
+    return box
+
+def fit_expo(h, opt = 'QS'):
+    '''Fit a normalised exponential to the histo.'''
+    expo = normalised_exp_TF1('expo', h.GetXaxis().GetXmin(), h.GetXaxis().GetXmax(),
+                              mean = h.GetMean())
+    expo.FixParameter(0, h.Integral('width'))
+    expo.SetLineColor(h.GetLineColor())
+    result = h.Fit(expo, opt)
+    if result.Get().Status() != 0:
+        print('WARNING: expo fit failed to', h.GetName())
+        return None, None
+    return expo.GetParameter(1), expo.GetParError(1)
+
+def validate_weighting(originaltree, weightedtree, name, weight, variables, outputdir,
+                       originalname = '', updateoriginal = False, updateweighted = False):
+    '''Compare distributions in originaltree to the weighted distributions in weightedtree.'''
+    zerocache = weightedtree.get_cache(name + '_ZeroWeights',
+                                       ['noriginal', 'nweighted', 'sumweights', 'nzeroweights'],
+                                       count_zero_weights, args = (weight, originaltree),
+                                       update = (updateweighted or updateoriginal))
+    globalweight = zerocache.noriginal/zerocache.sumweights
+    print('{0}: N. entries with zero weight: {1} ({2:.2f}%)'.format(name, zerocache.nzeroweights,
+                                                                    100.*zerocache.nzeroweights/zerocache.nweighted))
+    selection = '({0}) * ({1}) * {2}'.format(weightedtree.selection, weight, globalweight)
+    caches = {}
+    ratios = {}
+    canv = ROOT.TCanvas()
+    for var in variables:
+        _name = name + '_' + var.name
+        originalcache = originaltree.histo_cache(var, update = updateoriginal, name = originalname + var.name)
+        caches[originalcache.name] = originalcache
+        cache = weightedtree.histo_cache(var, selection = selection, name = _name, update = updateweighted)
+        caches[cache.name] = cache
+        hunb = originalcache.get(0)
+        hweighted = cache.get(0)
+        for h in hunb, hweighted:
+            h.SetLineWidth(3)
+            h.SetStats(False)
+        hunb.SetLineColor(ROOT.kBlack)
+        hweighted.SetLineColor(ROOT.kRed)
+        with Silence():
+            ratio = ROOT.TRatioPlot(hweighted, hunb)
+            ratio.SetH1DrawOpt('E')
+            ratio.Draw()
+        ratio.GetUpperPad().SetLogy()
+        box = chi2box(hunb, hweighted)
+        print(_name, box.GetLine(0).GetTitle())
+        canv.SaveAs(os.path.join(outputdir, _name + '_corrected_ratio.pdf'))
+        if 'time' in var.name:
+            unbtau, unbtauerr = fit_expo(hunb)
+            tau, tauerr = fit_expo(hweighted)
+            delta = tau - unbtau
+            deltaerr = (unbtauerr**2 + tauerr**2)**.5
+            sigma = delta/deltaerr
+            print('Tau = {0:.3f} +/- {1:.3f} ps, dTau = {2:.1f} +/- {3:.1f} fs ({4:.2f} sigma)'\
+                .format(tau, tauerr, delta*1000., deltaerr*1000., sigma))
+        ratios[_name] = ratio
+    return caches, ratios
+
+def get_weights_and_vals(tree, variables, n = None):
+    '''Get weights (from the selection) and values of the variables from the tree.'''
+    weightvar = tree.selection_functor()
+    varlist = tree.get_functor_list(variables)
+    weights = []
+    vals = []
+    if None == n:
+        for i in tree:
+            weights.append(weightvar())
+            vals.append(vals())
+    else:
+        j = 0
+        for i in tree:
+            weights.append(weightvar())
+            vals.append(varlist())
+            j += 1
+            if j >= n:
+                break
+    return weights, vals
+    
+def gbreweight(originaltree, weightedtree, name, variables, n = None):
+    '''Use Hep_ml GBReweighter to calculate weights for weightedtree to match originaltree in the given variables.'''
+    from hep_ml.reweight import GBReweighter
+    
+    originalweights, originalvals = get_weights_and_vals(originaltree, variables, n)
+    weightedweights, weightedvals = get_weights_and_vals(weightedtree, variables, n)
+    
+    weighter = GBReweighter()
+    print('Fit GBReweighter', name)
+    weighter.fit(original = originalvals, original_weight = originalweights, target = weightedvals,
+                 target_weight = weightedweights)
+    weight = weightedtree.selection_functor()
+    vals = weightedtree.get_functor_list(variables)
+    def get_weight():
+        _w = weighter.predict_weights([vals()])[0]
+        return [_w, _w * weight()]
+    print('Add weights for GBReweighter', name)
+    weightedtree.add_friend_tree(name, {name : dict(function = get_weight, length = 2, maxlength = 2)})
+
+def histo_reweight(originaltree, weightedtree, name, variables, n = None):
+    '''Make a histo of the given variable for each tree and use the ratio to reweight weightedtree.'''
+    originalcache = []

@@ -5,7 +5,7 @@ from AnalysisUtils.RooFit import RooFit
 import os, ROOT, pprint, cppyy, glob, re, multiprocessing, datetime, sys
 from AnalysisUtils.makeroodataset import make_roodataset, make_roodatahist
 from AnalysisUtils.treeutils import make_chain, set_prefix_aliases, check_formula_compiles, is_tfile_ok, copy_tree,\
-    TreeBranchAdder, tree_loop, TreeFormula, tree_mean, tree_iter
+    TreeBranchAdder, tree_loop, TreeFormula, TreeFormulaList, tree_mean, tree_iter
 from array import array
 from copy import deepcopy
 from multiprocessing import Pool
@@ -285,6 +285,9 @@ class DataChain(ROOT.TChain):
                     usevariables.append(subvar)
             # A NamedFormula instance.
             else:
+                # Make sure to use this tree's version of the variable in case of different definitions.
+                if variable.name in self.variables:
+                    variable = self.variables[variable.name]
                 subvar, _usedaliases = self.get_used_substitutions(variable.formula)
                 kwargs['variables'][variable.name] = variable
                 usedaliases.update(_usedaliases)
@@ -359,7 +362,7 @@ class DataChain(ROOT.TChain):
                         makedir = True, zfill = 4):
         '''Add a friend tree to the given dataset.
         friendname = name of the friend dataset
-        adderkwargs = list of dicts to be passed as arguments to TreeBranchAdder instances (excluding
+        adderkwargs = list or dict of dicts to be passed as arguments to TreeBranchAdder instances (excluding
           the tree argument)
         treename = name of the friend TTree (default friendname + 'Tree')
         makedir & zfill are passed to frield_file_name.'''
@@ -367,14 +370,17 @@ class DataChain(ROOT.TChain):
         if self.get_friend(friendname):
             tree = self.clone(ignorefriends = self.ignorefriends + [friendname])
             return tree.add_friend_tree(friendname = friendname, adderkwargs = adderkwargs, treename = treename,
-                                        perfile = perfile, makdedir = makedir, zfill = zfill)
+                                        perfile = perfile, makedir = makedir, zfill = zfill)
 
         if None == treename:
             treename = friendname + 'Tree'
         fout = ROOT.TFile.Open(self.friend_file_name(friendname, treename,
                                                      makedir = makedir, zfill = zfill), 'recreate')
         treeout = ROOT.TTree(treename, treename)
-        adders = [TreeBranchAdder(treeout, **kwargs) for kwargs in adderkwargs]
+        if isinstance(adderkwargs, dict):
+            adders = [TreeBranchAdder(treeout, name = name, **kwargs) for name, kwargs in adderkwargs.items()]
+        else:
+            adders = [TreeBranchAdder(treeout, **kwargs) for kwargs in adderkwargs]
         for i in tree_loop(self):
             for adder in adders:
                 adder.set_value()
@@ -766,7 +772,49 @@ class DataChain(ROOT.TChain):
 
     def __iter__(self):
         return self.loop()
-        
+
+    def compare(self, other):
+        '''Compare with another DataChain and print differences.'''
+        for k, v in self.__dict__.items():
+            vo = other[k]
+            if vo != v:
+                print('self.{0}.{1} = {2!r}, other.{3}.{1} = {4!r}'.format(self.name, k, v, other.name, vo))
+
+    def get_functor(self, name, formula = None):
+        '''Get a TreeFormula instance with the given name and formula.'''
+        if not formula:
+            var = self.variables.get_var(name)
+            try:
+                formula = var.name
+            except AttributeError:
+                formula = name
+        return TreeFormula(name, formula, self)
+
+    def mean(self, formula, weight = None, selection = None, extrasel = None):
+        '''Get the mean of the given formula.'''
+        return tree_mean(self, formula, self.get_selection(selection, extrasel), weight)
+
+    def formula_iter(self, formula, selection = None, extrasel = None):
+        '''Iterate over the formula values.'''
+        return tree_iter(self, formula, self.get_selection(selection, extrasel))
+
+    def selection_functor(self):
+        '''Get the functor for the selection.'''
+        if self.selection:
+            return self.get_functor('selection', self.selection)
+        return lambda : 1.
+
+    def get_functor_list(self, variables):
+        '''Get a TreeFormulaList for the given variables.'''
+        _vars = []
+        for var in variables:
+            var = self.variables.get_var(var)
+            try:
+                _vars.append(var.name)
+            except AttributeError:
+                _vars.append(var)
+        return TreeFormulaList(self, *_vars)
+
 class DataLibrary(object) :
     '''Contains info on datasets and functions to retrieve them.'''
 
@@ -994,25 +1042,6 @@ class DataLibrary(object) :
         data.parallel_filter(outputdir = outputdir, outputname = outputname, selection = selection,
                              nthreads = nthreads, zfill = zfill, overwrite = overwrite,
                              ignorefriends = ignorefriends, noutputfiles = noutputfiles)
-
-    def compare(self, other):
-        '''Compare with another DataChain and print differences.'''
-        for k, v in self.__dict__.items():
-            vo = other[k]
-            if vo != v:
-                print('self.{0}.{1} = {2!r}, other.{3}.{1} = {4!r}'.format(self.name, k, v, other.name, vo))
-
-    def get_functor(self, name, formula):
-        '''Get a TreeFormula instance with the given name and formula.'''
-        return TreeFormula(name, formula, self)
-
-    def mean(self, formula, weight = None, selection = None, extrasel = None):
-        '''Get the mean of the given formula.'''
-        return tree_mean(self, formula, self.get_selection(selection, extrasel), weight)
-
-    def formula_iter(self, formula, selection = None, extrasel = None):
-        '''Iterate over the formula values.'''
-        return tree_iter(self, formula, self.get_selection(selection, extrasel))
 
 class BinnedFitData(object) :
     '''Bin a RooDataSet in one or two variables and make RooDataHists of another variable in those bins.'''
