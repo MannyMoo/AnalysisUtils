@@ -287,7 +287,7 @@ class DataChain(ROOT.TChain):
             else:
                 # Make sure to use this tree's version of the variable in case of different definitions.
                 if variable.name in self.variables:
-                    variable = self.variables[variable.name]
+                    variable = variable.copy(formula = self.variables[variable.name].formula)
                 subvar, _usedaliases = self.get_used_substitutions(variable.formula)
                 kwargs['variables'][variable.name] = variable
                 usedaliases.update(_usedaliases)
