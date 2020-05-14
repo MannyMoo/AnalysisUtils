@@ -324,17 +324,19 @@ class DataChain(ROOT.TChain):
         for info in self.GetListOfFriends():
             info.GetTree().Show(n)
 
-    def draw(self, var, varY = None, nbins = None, nbinsY = None, name = None, suffix = '',
-             selection = None, extrasel = None, opt = ''):
+    def draw(self, var, varY = None, varZ = None, nbins = None, nbinsY = None, nbinsZ = None,
+             name = None, suffix = '', selection = None, extrasel = None, opt = ''):
         '''Make a histo of a variable or 2D histo of two variables. 'var' and 'varY' can be 
         the names of known variables or NamedFormula instances. If this dataset has a 
         default selection it's used if one isn't given.'''
         var = self.variables.get_var(var)
         varY = self.variables.get_var(varY)
-        if None == selection:
-            selection = self.selection
-        if extrasel:
-            selection = str(StringFormula(selection) & StringFormula(extrasel))
+        varZ = self.variables.get_var(varZ)
+        selection = self.get_selection(selection, extrasel)
+        if varZ:
+            h = self.variables.histo3D(var, varY, varZ, name = name, nbins = nbins, nbinsY = nbinsY,
+                                       nbinsZ = nbinsZ, suffix = suffix)
+            self.Draw('{3} : {2} : {1} >> {0}'.format(h.GetName(), var.name, varY.name, varZ.name), selection, opt)
         if varY:
             h = self.variables.histo2D(var, varY, name = name, nbins = nbins, nbinsY = nbinsY, suffix = suffix)
             self.Draw('{2} : {1} >> {0}'.format(h.GetName(), var.name, varY.name), selection, opt)
@@ -358,6 +360,18 @@ class DataChain(ROOT.TChain):
                 return self.friends[name]
         return None
 
+    def remove_friend(self, friend):
+        '''Remove a friend from the list of friends either by name or instance.'''
+        if isinstance(friend, str):
+            friend = self.get_friend(friend)
+            if not friend:
+                return
+        del self.friends[friend.name]
+        friendlist = self.GetListOfFriends()
+        friendelm = friendlist.FindObject(friend.GetName())
+        friendlist.Remove(friendelm)
+        return friend
+
     def add_friend_tree(self, friendname, adderkwargs, treename = None, perfile = False,
                         makedir = True, zfill = 4):
         '''Add a friend tree to the given dataset.
@@ -367,10 +381,7 @@ class DataChain(ROOT.TChain):
         treename = name of the friend TTree (default friendname + 'Tree')
         makedir & zfill are passed to frield_file_name.'''
         # Remove the friend if it's currently in the friends list.
-        if self.get_friend(friendname):
-            tree = self.clone(ignorefriends = self.ignorefriends + [friendname])
-            return tree.add_friend_tree(friendname = friendname, adderkwargs = adderkwargs, treename = treename,
-                                        perfile = perfile, makedir = makedir, zfill = zfill)
+        self.remove_friend(friendname)
 
         if None == treename:
             treename = friendname + 'Tree'

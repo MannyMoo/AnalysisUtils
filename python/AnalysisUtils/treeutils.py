@@ -36,6 +36,8 @@ def set_prefix_aliases(tree, aliases) :
         newname = branch.GetName()
         changed = False
         for name, alias in aliases.items() :
+            if name == alias:
+                continue
             if newname.startswith(name) :
                 #print name, alias, newname
                 newname = alias + newname[len(name):]
@@ -524,11 +526,14 @@ class TreeBranchAdder(object) :
         self.name = name
         self.values = array(type, [0] * maxlength)
         self.type = type
+        # Variable length, given the name of the length branch as length variable.
         if isinstance(length, str) and filllength:
             self.length = TreeBranchAdder(tree, length, function = lambda : len(self.values), type = 'i')
             self.set_length = lambda : self.length.set_value()
             self.fill_length = lambda : self.length.fill()
+        # Fixed length.
         else :
+            maxlength = max(length, maxlength)
             self.length = length
             self.set_length = lambda : True
             self.fill_length = lambda : True

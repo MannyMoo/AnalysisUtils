@@ -61,7 +61,7 @@ def validate_weighting(originaltree, weightedtree, name, weight, variables, outp
     zerocache = weightedtree.get_cache(name + '_ZeroWeights',
                                        ['noriginal', 'nweighted', 'sumweights', 'nzeroweights'],
                                        count_zero_weights, args = (weight, originaltree),
-                                       update = (updateweighted or updateoriginal))
+                                       update = (updateweighted or updateoriginal), variables = [weight])
     globalweight = zerocache.noriginal/zerocache.sumweights
     print('{0}: N. entries with zero weight: {1} ({2:.2f}%)'.format(name, zerocache.nzeroweights,
                                                                     100.*zerocache.nzeroweights/zerocache.nweighted))
@@ -121,25 +121,43 @@ def get_weights_and_vals(tree, variables, n = None):
                 break
     return weights, vals
     
-def gbreweight(originaltree, weightedtree, name, variables, n = None):
-    '''Use Hep_ml GBReweighter to calculate weights for weightedtree to match originaltree in the given variables.'''
+def gbreweight(weighttree, originaltree, name, variables, n = None):
+    '''Use Hep_ml GBReweighter to calculate weights for weighttree to match originaltree in the given variables.
+    Adds a friend with branch named 'name' of length 2: the first element is the calculated weight, the second is
+    the product of that weight with any existing weight used for the weighttree (from the selection).'''
     from hep_ml.reweight import GBReweighter
     
     originalweights, originalvals = get_weights_and_vals(originaltree, variables, n)
-    weightedweights, weightedvals = get_weights_and_vals(weightedtree, variables, n)
+    weightedweights, weightedvals = get_weights_and_vals(weighttree, variables, n)
     
     weighter = GBReweighter()
     print('Fit GBReweighter', name)
     weighter.fit(original = originalvals, original_weight = originalweights, target = weightedvals,
                  target_weight = weightedweights)
-    weight = weightedtree.selection_functor()
-    vals = weightedtree.get_functor_list(variables)
+    weight = weighttree.selection_functor()
+    vals = weighttree.get_functor_list(variables)
     def get_weight():
         _w = weighter.predict_weights([vals()])[0]
         return [_w, _w * weight()]
     print('Add weights for GBReweighter', name)
-    weightedtree.add_friend_tree(name, {name : dict(function = get_weight, length = 2, maxlength = 2)})
+    weighttree.add_friend_tree(name, {name : dict(function = get_weight, length = 2)})
 
-def histo_reweight(originaltree, weightedtree, name, variables, n = None):
-    '''Make a histo of the given variable for each tree and use the ratio to reweight weightedtree.'''
-    originalcache = []
+def histo_reweight(weighttree, originaltree, name, variable, variableY = None, variableZ = None, n = None):
+    '''Make a histo of the given variable for each tree and use the ratio to reweight weighttree.
+    Adds a friend with branch named 'name' of length 2: the first element is the calculated weight, the second is
+    the product of that weight with any existing weight used for the weighttree (from the selection).'''
+
+    horiginal = originaltree.draw(var = variable, varY = variableY, varZ = variableZ, name = name + '_original')
+    hunweighted = weighttree.draw(var = variable, varY = variableY, varZ = variableZ, name = name + '_unweighted')
+    hratio = horiginal.Clone()
+    hratio.SetName(name + '_ratio')
+    hratio.Divide(hunweighted)
+    variables = weighttree.get_functor_list(filter(None, [variable, variableY, variableZ]))
+    selvar = weighttree.selection_functor()
+    def get_ratio():
+        vals = variables()
+        bins = [ax.FindBin(v) for v, ax in zip(vals, [hratio.GetXaxis(), hratio.GetYaxis(), hratio.GetZaxis()])]
+        ratio = hratio.GetBinContent(*bins)
+        return [ratio, ratio*selvar()]
+    weighttree.add_friend_tree(name, {name : dict(function = get_ratio, length = 2)})
+    return {'horiginal' : horiginal, 'hunweighted' : hunweighted, 'hratio' : hratio}
