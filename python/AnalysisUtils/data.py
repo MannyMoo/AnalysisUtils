@@ -11,7 +11,7 @@ from copy import deepcopy
 from multiprocessing import Pool
 from AnalysisUtils.stringformula import NamedFormula, NamedFormulae, StringFormula
 from AnalysisUtils.datacache import DataCache
-from AnalysisUtils.selection import AND, OR
+from AnalysisUtils.selection import AND, OR, product
 
 def _is_ok(tree, fout, selection):
     '''Check if a TTree has been copied OK to the output file.'''
@@ -64,7 +64,7 @@ class DataChain(ROOT.TChain):
             print('ERROR: constructing DataChain {0}: no files given!'.format(self.name), file = sys.stderr)
         self.variables = NamedFormulae(variables)
         self.varnames = varnames
-        self.selection = selection
+        self.selection = selection if selection != None else ''
         self.ignorecompilefails = ignorecompilefails
         self.aliases = aliases
         self.friends = {}
@@ -325,14 +325,14 @@ class DataChain(ROOT.TChain):
             info.GetTree().Show(n)
 
     def draw(self, var, varY = None, varZ = None, nbins = None, nbinsY = None, nbinsZ = None,
-             name = None, suffix = '', selection = None, extrasel = None, opt = ''):
+             name = None, suffix = '', selection = None, extrasel = None, weight = None, opt = ''):
         '''Make a histo of a variable or 2D histo of two variables. 'var' and 'varY' can be 
         the names of known variables or NamedFormula instances. If this dataset has a 
         default selection it's used if one isn't given.'''
         var = self.variables.get_var(var)
         varY = self.variables.get_var(varY)
         varZ = self.variables.get_var(varZ)
-        selection = self.get_selection(selection, extrasel)
+        selection = self.get_selection(selection = selection, extrasel = extrasel, weight = weight)
         if varZ:
             h = self.variables.histo3D(var, varY, varZ, name = name, nbins = nbins, nbinsY = nbinsY,
                                        nbinsZ = nbinsZ, suffix = suffix)
@@ -698,8 +698,9 @@ class DataChain(ROOT.TChain):
             heff = self.variables.histo(variable, name = name, htype = htype)
         heff.SetDirectory(None)
         passvar = TreeFormula('passsel', passselection, self)
-        if weight:
-            weightvar = TreeFormula('weightvar', weight, self)
+        weightsel = self.get_selection(selection = selection, weight = weight)
+        if weightsel:
+            weightvar = self.get_functor('weightvar', weightsel)
             fill = lambda : heff.FillWeighted(bool(passvar()), weightvar(), *[v() for v in variables])
         else:
             fill = lambda : heff.FillWeighted(bool(passvar()), 1., *[v() for v in variables])
@@ -766,13 +767,15 @@ class DataChain(ROOT.TChain):
         return tree.get_cache(name, [name, name + '_painted'], plot_eff,
                               kwargs = plotkwargs, **kwargs)
             
-    def get_selection(self, selection = None, extrasel = None):
+    def get_selection(self, selection = None, extrasel = None, weight = None):
         '''Get the selection for this TTree. If no selection is given, the default is used. If 'extrasel'
         is given, it's appended to the selection.'''
         if None == selection:
             selection = self.selection
         if extrasel:
             selection = AND(selection, extrasel)
+        if weight:
+            selection = product(selection, weight)
         return selection
 
     def loop(self, selection = None, extrasel = None):
@@ -825,6 +828,12 @@ class DataChain(ROOT.TChain):
             except AttributeError:
                 _vars.append(var)
         return TreeFormulaList(self, *_vars)
+
+    def add_weight(self, weight):
+        '''Append a weight to the selection.'''
+        self.selection = self.get_selection(weight = weight)
+        return self.selection
+        
 
 class DataLibrary(object) :
     '''Contains info on datasets and functions to retrieve them.'''

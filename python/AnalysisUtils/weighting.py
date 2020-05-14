@@ -65,7 +65,8 @@ def validate_weighting(originaltree, weightedtree, name, weight, variables, outp
     globalweight = zerocache.noriginal/zerocache.sumweights
     print('{0}: N. entries with zero weight: {1} ({2:.2f}%)'.format(name, zerocache.nzeroweights,
                                                                     100.*zerocache.nzeroweights/zerocache.nweighted))
-    selection = '({0}) * ({1}) * {2}'.format(weightedtree.selection, weight, globalweight)
+    selection = weightedtree.get_selection(weight = weight)
+    selection = weightedtree.get_selection(selection = selection, weight = str(globalweight))
     caches = {}
     ratios = {}
     canv = ROOT.TCanvas()
@@ -147,8 +148,10 @@ def histo_reweight(weighttree, originaltree, name, variable, variableY = None, v
     Adds a friend with branch named 'name' of length 2: the first element is the calculated weight, the second is
     the product of that weight with any existing weight used for the weighttree (from the selection).'''
 
-    horiginal = originaltree.draw(var = variable, varY = variableY, varZ = variableZ, name = name + '_original')
-    hunweighted = weighttree.draw(var = variable, varY = variableY, varZ = variableZ, name = name + '_unweighted')
+    horiginal = originaltree.draw(var = variable, varY = variableY, varZ = variableZ,
+                                  name = originaltree.name + '_' + name + '_original')
+    hunweighted = weighttree.draw(var = variable, varY = variableY, varZ = variableZ,
+                                  name = weighttree.name + '_' + name + '_unweighted')
     hratio = horiginal.Clone()
     hratio.SetName(name + '_ratio')
     hratio.Divide(hunweighted)
@@ -156,8 +159,9 @@ def histo_reweight(weighttree, originaltree, name, variable, variableY = None, v
     selvar = weighttree.selection_functor()
     def get_ratio():
         vals = variables()
-        bins = [ax.FindBin(v) for v, ax in zip(vals, [hratio.GetXaxis(), hratio.GetYaxis(), hratio.GetZaxis()])]
-        ratio = hratio.GetBinContent(*bins)
+        #bins = [ax.FindBin(v) for v, ax in zip(vals, [hratio.GetXaxis(), hratio.GetYaxis(), hratio.GetZaxis()])]
+        #ratio = hratio.GetBinContent(*bins)
+        hratio.Interpolate(*vals)
         return [ratio, ratio*selvar()]
     weighttree.add_friend_tree(name, {name : dict(function = get_ratio, length = 2)})
     return {'horiginal' : horiginal, 'hunweighted' : hunweighted, 'hratio' : hratio}
