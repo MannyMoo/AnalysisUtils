@@ -17,9 +17,9 @@ def efficiency_weight2d(var, vary):
 def count_zero_weights(weightedtree, weight, originaltree):
     '''Get statistics on the number of entries in weightedtree with zero weights.'''
     vals = {}
-    vals['noriginal'] = originaltree.GetEntries(originaltree.selection)
-    vals['nweighted'] = weightedtree.GetEntries(weightedtree.selection)
-    vals['sumweights'] = sum(weightedtree.formula_iter(weight))
+    vals['noriginal'] = originaltree.sum_of_weights()
+    vals['nweighted'] = weightedtree.sum_of_weights()
+    vals['sumweights'] = weightedtree.sum_of_weights(weight = weight)
     vals['nzeroweights'] = weightedtree.GetEntries(AND(weightedtree.selection, '({0}) == 0.'.format(weight)))
     return vals
 
@@ -50,7 +50,7 @@ def fit_expo(h, opt = 'QS'):
     expo.FixParameter(0, h.Integral('width'))
     expo.SetLineColor(h.GetLineColor())
     result = h.Fit(expo, opt)
-    if result.Get().Status() != 0:
+    if not result or result.Get().Status() != 0:
         print('WARNING: expo fit failed to', h.GetName())
         return None, None
     return expo.GetParameter(1), expo.GetParError(1)
@@ -155,13 +155,15 @@ def histo_reweight(weighttree, originaltree, name, variable, variableY = None, v
     hratio = horiginal.Clone()
     hratio.SetName(name + '_ratio')
     hratio.Divide(hunweighted)
-    variables = weighttree.get_functor_list(filter(None, [variable, variableY, variableZ]))
+    variables = filter(None, [variable, variableY, variableZ])
+    variables = weighttree.get_functor_list(variables)
     selvar = weighttree.selection_functor()
     def get_ratio():
         vals = variables()
         #bins = [ax.FindBin(v) for v, ax in zip(vals, [hratio.GetXaxis(), hratio.GetYaxis(), hratio.GetZaxis()])]
         #ratio = hratio.GetBinContent(*bins)
-        hratio.Interpolate(*vals)
+        with Silence():
+            ratio = hratio.Interpolate(*vals)
         return [ratio, ratio*selvar()]
     weighttree.add_friend_tree(name, {name : dict(function = get_ratio, length = 2)})
     return {'horiginal' : horiginal, 'hunweighted' : hunweighted, 'hratio' : hratio}

@@ -834,6 +834,12 @@ class DataChain(ROOT.TChain):
         self.selection = self.get_selection(weight = weight)
         return self.selection
         
+    def sum_of_weights(self, selection = None, extrasel = None, weight = None):
+        '''Get the sum of weights (using the selection).'''
+        selection = self.get_selection(selection = selection, extrasel = extrasel, weight = weight)
+        if not selection:
+            return self.GetEntries()
+        return sum(self.formula_iter(selection, selection = selection))
 
 class DataLibrary(object) :
     '''Contains info on datasets and functions to retrieve them.'''
