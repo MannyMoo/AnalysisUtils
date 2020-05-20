@@ -303,13 +303,17 @@ class DataChain(ROOT.TChain):
             if name in self.variables:
                 kwargs['variables'][name] = self.variables[name]
         # Also add variables that aren't aliases (name is the same as formula)
+        usevariablesset = set()
         for var in usevariables:
-            for _var in StringFormula(var).named_variables():
-                if _var in self.variables and _var not in kwargs['variables']:
-                    kwargs['variables'][_var] = self.variables[_var]
+            usevariablesset.update(StringFormula(var).named_variables())
+        for var in usevariablesset:
+            if var in self.variables and var not in kwargs['variables']:
+                kwargs['variables'][var] = self.variables[var]
 
+        usevariables = list(usevariablesset)
+        usedfriends = self.get_used_friends(expand = False, parse = False, *usevariables).values()
         kwargs['friends'] = [friend.clone_for_variables(variables, selection = kwargs['selection']) 
-                             for friend in self.get_used_friends(expand = False, *usevariables).values()]
+                             for friend in usedfriends]
         kwargs['addfriends'] = False
         kwargs['ignorefriends'] = []
         return self.clone(ignoreperfile = ignoreperfile, suffix = suffix, keepfriends = False, **kwargs)
@@ -609,16 +613,20 @@ class DataChain(ROOT.TChain):
         if variables:
             friends = self.get_used_friends(variable)
             for var in variables:
-                friends.update(self.get_used_friends(var))
+                friends.update(self.get_used_friends(var, **kwargs))
             return friends
         if kwargs.get('expand', True):
             variable = StringFormula(self.expand_formula(variable))
         else:
             variable = StringFormula(variable)
-        branches = variable.named_variables()
+        if kwargs.get('parse', True):
+            branches = variable.named_variables()
+        else:
+            branches = [variable]
         friends = {}
         for name, friend in self.friends.items():
-            if any(br in friend.GetListOfBranches() for br in branches):
+            brlist = friend.GetListOfBranches()
+            if any(br in brlist for br in branches):
                 friends[name] = friend
         return friends
 
