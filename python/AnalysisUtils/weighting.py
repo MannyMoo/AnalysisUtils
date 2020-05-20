@@ -143,11 +143,8 @@ def gbreweight(weighttree, originaltree, name, variables, n = None):
     print('Add weights for GBReweighter', name)
     weighttree.add_friend_tree(name, {name : dict(function = get_weight, length = 2)})
 
-def histo_reweight(weighttree, originaltree, name, variable, variableY = None, variableZ = None, n = None):
-    '''Make a histo of the given variable for each tree and use the ratio to reweight weighttree.
-    Adds a friend with branch named 'name' of length 2: the first element is the calculated weight, the second is
-    the product of that weight with any existing weight used for the weighttree (from the selection).'''
-
+def ratio_histo(weighttree, originaltree, name, variable, variableY = None, variableZ = None):
+    '''Get a histogram of the ratio of variables between trees.'''
     horiginal = originaltree.draw(var = variable, varY = variableY, varZ = variableZ,
                                   name = originaltree.name + '_' + name + '_original')
     hunweighted = weighttree.draw(var = variable, varY = variableY, varZ = variableZ,
@@ -155,6 +152,21 @@ def histo_reweight(weighttree, originaltree, name, variable, variableY = None, v
     hratio = horiginal.Clone()
     hratio.SetName(name + '_ratio')
     hratio.Divide(hunweighted)
+    return {'horiginal' : horiginal, 'hunweighted' : hunweighted, 'hratio' : hratio}    
+
+def histo_reweight(weighttree, originaltree, name, variable, variableY = None, variableZ = None):
+    '''Make a histo of the given variable for each tree and use the ratio to reweight weighttree.
+    Adds a friend with branch named 'name' of length 2: the first element is the calculated weight, the second is
+    the product of that weight with any existing weight used for the weighttree (from the selection).'''
+
+    histos = ratio_histo(weighttree, originaltree, name, variable = variable, variableY = variableY,
+                         variableZ = variableZ)
+    add_histo_weight(weighttree, histos['hratio'], name, variable = variable, variableY = variableY, 
+                     variableZ = variableZ)
+    return histos
+
+def add_histo_weight(weighttree, hratio, name, variable, variableY = None, variableZ = None, n = None):
+    '''Add a weight from a histogram.'''
     variables = filter(None, [variable, variableY, variableZ])
     variables = weighttree.get_functor_list(variables)
     selvar = weighttree.selection_functor()
@@ -166,4 +178,4 @@ def histo_reweight(weighttree, originaltree, name, variable, variableY = None, v
             ratio = hratio.Interpolate(*vals)
         return [ratio, ratio*selvar()]
     weighttree.add_friend_tree(name, {name : dict(function = get_ratio, length = 2)})
-    return {'horiginal' : horiginal, 'hunweighted' : hunweighted, 'hratio' : hratio}
+    return {'success' : True}
