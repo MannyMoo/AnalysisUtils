@@ -23,18 +23,18 @@ def count_zero_weights(weightedtree, weight, originaltree):
     vals['nzeroweights'] = weightedtree.GetEntries(AND(weightedtree.selection, '({0}) == 0.'.format(weight)))
     return vals
 
-def get_chi2(hunb, hweighted):
+def get_chi2(hunb, hweighted, chi2opt = 'UW'):
     '''Get the chi2, ndf, & P for the histos being consistent.'''
     with Silence():
-        p = hunb.Chi2Test(hweighted, 'UW')
-        chi2 = hunb.Chi2Test(hweighted, 'UWCHI2')
-        chi2ndf = hunb.Chi2Test(hweighted, 'UWCHI2/NDF')
+        p = hunb.Chi2Test(hweighted, chi2opt)
+        chi2 = hunb.Chi2Test(hweighted, chi2opt + 'CHI2')
+        chi2ndf = hunb.Chi2Test(hweighted, chi2opt + 'CHI2/NDF')
     ndf = chi2/chi2ndf if chi2ndf > 0 else hunb.GetNbinsX()
     return chi2, ndf, p
 
-def chi2box(hunb, hweighted):
+def chi2box(hunb, hweighted, chi2opt = 'UW'):
     '''Draw a box with the chi2, NDF & P for the histos being consistent.'''
-    chi2, ndf, prob = get_chi2(hunb, hweighted)
+    chi2, ndf, prob = get_chi2(hunb, hweighted, chi2opt)
     box = ROOT.TPaveText(0.6, 0.902, 1., 1., 'ndc')
     box.SetBorderSize(0)
     box.AddText('#chi^{3}/NDF = {0:5.1f}/{1}, P = {2:4.1f}%'.format(chi2, ndf, prob*100., '{2}'))
@@ -56,7 +56,7 @@ def fit_expo(h, opt = 'QS'):
     return expo.GetParameter(1), expo.GetParError(1)
 
 def validate_weighting(originaltree, weightedtree, name, weight, variables, outputdir,
-                       originalname = '', updateoriginal = False, updateweighted = False):
+                       originalname = '', updateoriginal = False, updateweighted = False, chi2opt = 'UW'):
     '''Compare distributions in originaltree to the weighted distributions in weightedtree.'''
     zerocache = weightedtree.get_cache(name + '_ZeroWeights',
                                        ['noriginal', 'nweighted', 'sumweights', 'nzeroweights'],
@@ -88,7 +88,7 @@ def validate_weighting(originaltree, weightedtree, name, weight, variables, outp
             ratio.SetH1DrawOpt('E')
             ratio.Draw()
         ratio.GetUpperPad().SetLogy()
-        box = chi2box(hunb, hweighted)
+        box = chi2box(hunb, hweighted, chi2opt)
         print(_name, box.GetLine(0).GetTitle())
         canv.SaveAs(os.path.join(outputdir, _name + '_corrected_ratio.pdf'))
         if 'time' in var.name:

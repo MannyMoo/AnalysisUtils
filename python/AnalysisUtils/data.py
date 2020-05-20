@@ -298,9 +298,15 @@ class DataChain(ROOT.TChain):
             usevariables.append(subvar)
             usedaliases.update(_usedaliases)
 
+        # Add all variables that're aliases
         for name, alias in usedaliases.items():
             if name in self.variables:
                 kwargs['variables'][name] = self.variables[name]
+        # Also add variables that aren't aliases (name is the same as formula)
+        for var in usevariables:
+            for _var in StringFormula(var).named_variables():
+                if _var in self.variables and _var not in kwargs['variables']:
+                    kwargs['variables'][_var] = self.variables[_var]
 
         kwargs['friends'] = [friend.clone_for_variables(variables, selection = kwargs['selection']) 
                              for friend in self.get_used_friends(expand = False, *usevariables).values()]
@@ -673,7 +679,7 @@ class DataChain(ROOT.TChain):
         '''Get the efficiency of the given selection. If one isn't given, use the default selection.'''
         selection = self.get_selection(selection, extrasel)
         passselection = AND(passselection, selection)
-        return float(self.GetEntries(passselection))/self.GetEntries(selection)
+        return float(self.sum_of_weights(passselection))/self.sum_of_weights(selection)
 
     def plot_efficiency(self, name, passselection, variable, variableY = None, weight = None, drawopt = '', 
                         selection = None, extrasel = None, htype = ROOT.TEfficiency, efflabel = 'Efficiency',

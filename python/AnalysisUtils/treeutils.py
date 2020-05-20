@@ -455,7 +455,7 @@ def get_event_list(tree, selection, setlist = False, listname = '') :
     event list is set to this.'''
 
     if not check_formula_compiles(selection, tree):
-        raise ValueError('Failed to compile selection {1!r} on TTree {2!r}'.format(selection, tree.GetName()))
+        raise ValueError('Failed to compile selection {0!r} on TTree {1!r}'.format(selection, tree.GetName()))
 
     if not listname :
         listname = (tree.GetName() + '_sellist_' + random_string()).replace('/', '_')
