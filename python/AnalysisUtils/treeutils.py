@@ -3,6 +3,7 @@
 import ROOT, pprint, re, random, string
 from array import array
 from AnalysisUtils.stringformula import NamedFormula, StringFormula
+from AnalysisUtils.Silence import Silence
 
 def random_string(n = 6, chars = string.ascii_uppercase + string.ascii_lowercase) :
     '''Generate a random string of length n.'''
@@ -311,29 +312,35 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
     # Need to use an EventList rather than passing the string to TTree::CopyTree
     # so that we can copy friend trees that don't contain all the required
     # branches for the selection.
-    if selection and isinstance(selection, str) :
-        selection = get_event_list(tree, selection)
-        selection.SetDirectory(None)
-    if selection :
+    if selection:
+        if isinstance(selection, str) :
+            selection = get_event_list(tree, selection)
+            selection.SetDirectory(None)
         prevlist = tree.GetEventList()
         tree.SetEventList(selection)
 
     if keepbranches :
-        for branch in tree.GetListOfBranches() :
-            if not any(re.search(pattern, branch.GetName()) for pattern in keepbranches) :
-                branch.SetStatus(False)
+        tree.SetBranchStatus('*', False)
+        # Have to pass the 'found' pointer otherwise it gives a warning, cause in the
+        # first pass SetBranchStatus only checks branches that are already enabled.
+        # It still gives a warning when the TTree is changed though, which is annoying.
+        found = array('I', [0])
+        for br in keepbranches:
+            tree.SetBranchStatus(br, True, found)
     if removebranches :
-        for branch in tree.GetListOfBranches() :
-            if any(re.search(pattern, branch.GetName()) for pattern in removebranches) :
-                branch.SetStatus(False)
+        for br in removebranches:
+            tree.SetBranchStatus(br, False)
     
     if fname:
         fout = ROOT.TFile.Open(fname, foption)
         write = True
-    if nentries > 0 :
-        treecopy = tree.CopyTree('', '', int(nentries))
-    else :
-        treecopy = tree.CopyTree('')
+    # This is needed to suppress erroneous warnings about missing branches when the tree
+    # is changed and SetBranchStatus is called in a TChain.
+    with Silence():
+        if nentries > 0 :
+            treecopy = tree.CopyTree('', '', int(nentries))
+        else :
+            treecopy = tree.CopyTree('')
 
     if rename :
         treecopy.SetName(rename(tree.GetName()))
@@ -351,6 +358,7 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
         # Accessing the list of friends in python adds it to the list of ROOT objects to cleanup,
         # but it's owned by the TTree, causing a double delete. So remove it from the cleanup
         # list.
+        tree.GetListOfFriends().SetBit(ROOT.kMustCleanup, False)
         treecopy.GetListOfFriends().Clear()
         treecopy.GetListOfFriends().SetBit(ROOT.kMustCleanup, False)
         friends = [elm.GetTree() for elm in tree.GetListOfFriends()]
