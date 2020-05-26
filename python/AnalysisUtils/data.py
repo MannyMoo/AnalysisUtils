@@ -5,13 +5,13 @@ from AnalysisUtils.RooFit import RooFit
 import os, ROOT, pprint, cppyy, glob, re, multiprocessing, datetime, sys
 from AnalysisUtils.makeroodataset import make_roodataset, make_roodatahist
 from AnalysisUtils.treeutils import make_chain, set_prefix_aliases, check_formula_compiles, is_tfile_ok, copy_tree,\
-    TreeBranchAdder, tree_loop, TreeFormula, tree_mean, tree_iter
+    TreeBranchAdder, tree_loop, TreeFormula, TreeFormulaList, tree_mean, tree_iter
 from array import array
 from copy import deepcopy
 from multiprocessing import Pool
 from AnalysisUtils.stringformula import NamedFormula, NamedFormulae, StringFormula
 from AnalysisUtils.datacache import DataCache
-from AnalysisUtils.selection import AND, OR
+from AnalysisUtils.selection import AND, OR, product
 
 def _is_ok(tree, fout, selection):
     '''Check if a TTree has been copied OK to the output file.'''
@@ -64,7 +64,7 @@ class DataChain(ROOT.TChain):
             print('ERROR: constructing DataChain {0}: no files given!'.format(self.name), file = sys.stderr)
         self.variables = NamedFormulae(variables)
         self.varnames = varnames
-        self.selection = selection
+        self.selection = selection if selection != None else ''
         self.ignorecompilefails = ignorecompilefails
         self.aliases = aliases
         self.friends = {}
@@ -285,6 +285,9 @@ class DataChain(ROOT.TChain):
                     usevariables.append(subvar)
             # A NamedFormula instance.
             else:
+                # Make sure to use this tree's version of the variable in case of different definitions.
+                if variable.name in self.variables:
+                    variable = variable.copy(formula = self.variables[variable.name].formula)
                 subvar, _usedaliases = self.get_used_substitutions(variable.formula)
                 kwargs['variables'][variable.name] = variable
                 usedaliases.update(_usedaliases)
@@ -295,12 +298,22 @@ class DataChain(ROOT.TChain):
             usevariables.append(subvar)
             usedaliases.update(_usedaliases)
 
+        # Add all variables that're aliases
         for name, alias in usedaliases.items():
             if name in self.variables:
                 kwargs['variables'][name] = self.variables[name]
+        # Also add variables that aren't aliases (name is the same as formula)
+        usevariablesset = set()
+        for var in usevariables:
+            usevariablesset.update(StringFormula(var).named_variables())
+        for var in usevariablesset:
+            if var in self.variables and var not in kwargs['variables']:
+                kwargs['variables'][var] = self.variables[var]
 
+        usevariables = list(usevariablesset)
+        usedfriends = self.get_used_friends(expand = False, parse = False, *usevariables).values()
         kwargs['friends'] = [friend.clone_for_variables(variables, selection = kwargs['selection']) 
-                             for friend in self.get_used_friends(expand = False, *usevariables).values()]
+                             for friend in usedfriends]
         kwargs['addfriends'] = False
         kwargs['ignorefriends'] = []
         return self.clone(ignoreperfile = ignoreperfile, suffix = suffix, keepfriends = False, **kwargs)
@@ -321,17 +334,19 @@ class DataChain(ROOT.TChain):
         for info in self.GetListOfFriends():
             info.GetTree().Show(n)
 
-    def draw(self, var, varY = None, nbins = None, nbinsY = None, name = None, suffix = '',
-             selection = None, extrasel = None, opt = ''):
+    def draw(self, var, varY = None, varZ = None, nbins = None, nbinsY = None, nbinsZ = None,
+             name = None, suffix = '', selection = None, extrasel = None, weight = None, opt = ''):
         '''Make a histo of a variable or 2D histo of two variables. 'var' and 'varY' can be 
         the names of known variables or NamedFormula instances. If this dataset has a 
         default selection it's used if one isn't given.'''
         var = self.variables.get_var(var)
         varY = self.variables.get_var(varY)
-        if None == selection:
-            selection = self.selection
-        if extrasel:
-            selection = str(StringFormula(selection) & StringFormula(extrasel))
+        varZ = self.variables.get_var(varZ)
+        selection = self.get_selection(selection = selection, extrasel = extrasel, weight = weight)
+        if varZ:
+            h = self.variables.histo3D(var, varY, varZ, name = name, nbins = nbins, nbinsY = nbinsY,
+                                       nbinsZ = nbinsZ, suffix = suffix)
+            self.Draw('{3} : {2} : {1} >> {0}'.format(h.GetName(), var.name, varY.name, varZ.name), selection, opt)
         if varY:
             h = self.variables.histo2D(var, varY, name = name, nbins = nbins, nbinsY = nbinsY, suffix = suffix)
             self.Draw('{2} : {1} >> {0}'.format(h.GetName(), var.name, varY.name), selection, opt)
@@ -355,26 +370,38 @@ class DataChain(ROOT.TChain):
                 return self.friends[name]
         return None
 
+    def remove_friend(self, friend):
+        '''Remove a friend from the list of friends either by name or instance.'''
+        if isinstance(friend, str):
+            friend = self.get_friend(friend)
+            if not friend:
+                return
+        del self.friends[friend.name]
+        friendlist = self.GetListOfFriends()
+        friendelm = friendlist.FindObject(friend.GetName())
+        friendlist.Remove(friendelm)
+        return friend
+
     def add_friend_tree(self, friendname, adderkwargs, treename = None, perfile = False,
                         makedir = True, zfill = 4):
         '''Add a friend tree to the given dataset.
         friendname = name of the friend dataset
-        adderkwargs = list of dicts to be passed as arguments to TreeBranchAdder instances (excluding
+        adderkwargs = list or dict of dicts to be passed as arguments to TreeBranchAdder instances (excluding
           the tree argument)
         treename = name of the friend TTree (default friendname + 'Tree')
         makedir & zfill are passed to frield_file_name.'''
         # Remove the friend if it's currently in the friends list.
-        if self.get_friend(friendname):
-            tree = self.clone(ignorefriends = self.ignorefriends + [friendname])
-            return tree.add_friend_tree(friendname = friendname, adderkwargs = adderkwargs, treename = treename,
-                                        perfile = perfile, makdedir = makedir, zfill = zfill)
+        self.remove_friend(friendname)
 
         if None == treename:
             treename = friendname + 'Tree'
         fout = ROOT.TFile.Open(self.friend_file_name(friendname, treename,
                                                      makedir = makedir, zfill = zfill), 'recreate')
         treeout = ROOT.TTree(treename, treename)
-        adders = [TreeBranchAdder(treeout, **kwargs) for kwargs in adderkwargs]
+        if isinstance(adderkwargs, dict):
+            adders = [TreeBranchAdder(treeout, name = name, **kwargs) for name, kwargs in adderkwargs.items()]
+        else:
+            adders = [TreeBranchAdder(treeout, **kwargs) for kwargs in adderkwargs]
         for i in tree_loop(self):
             for adder in adders:
                 adder.set_value()
@@ -586,16 +613,20 @@ class DataChain(ROOT.TChain):
         if variables:
             friends = self.get_used_friends(variable)
             for var in variables:
-                friends.update(self.get_used_friends(var))
+                friends.update(self.get_used_friends(var, **kwargs))
             return friends
         if kwargs.get('expand', True):
             variable = StringFormula(self.expand_formula(variable))
         else:
             variable = StringFormula(variable)
-        branches = variable.named_variables()
+        if kwargs.get('parse', True):
+            branches = variable.named_variables()
+        else:
+            branches = [variable]
         friends = {}
         for name, friend in self.friends.items():
-            if any(br in friend.GetListOfBranches() for br in branches):
+            brlist = friend.GetListOfBranches()
+            if any(br in brlist for br in branches):
                 friends[name] = friend
         return friends
 
@@ -656,7 +687,7 @@ class DataChain(ROOT.TChain):
         '''Get the efficiency of the given selection. If one isn't given, use the default selection.'''
         selection = self.get_selection(selection, extrasel)
         passselection = AND(passselection, selection)
-        return float(self.GetEntries(passselection))/self.GetEntries(selection)
+        return float(self.sum_of_weights(passselection))/self.sum_of_weights(selection)
 
     def plot_efficiency(self, name, passselection, variable, variableY = None, weight = None, drawopt = '', 
                         selection = None, extrasel = None, htype = ROOT.TEfficiency, efflabel = 'Efficiency',
@@ -681,8 +712,9 @@ class DataChain(ROOT.TChain):
             heff = self.variables.histo(variable, name = name, htype = htype)
         heff.SetDirectory(None)
         passvar = TreeFormula('passsel', passselection, self)
-        if weight:
-            weightvar = TreeFormula('weightvar', weight, self)
+        weightsel = self.get_selection(selection = selection, weight = weight)
+        if weightsel:
+            weightvar = self.get_functor('weightvar', weightsel)
             fill = lambda : heff.FillWeighted(bool(passvar()), weightvar(), *[v() for v in variables])
         else:
             fill = lambda : heff.FillWeighted(bool(passvar()), 1., *[v() for v in variables])
@@ -749,13 +781,15 @@ class DataChain(ROOT.TChain):
         return tree.get_cache(name, [name, name + '_painted'], plot_eff,
                               kwargs = plotkwargs, **kwargs)
             
-    def get_selection(self, selection = None, extrasel = None):
+    def get_selection(self, selection = None, extrasel = None, weight = None):
         '''Get the selection for this TTree. If no selection is given, the default is used. If 'extrasel'
         is given, it's appended to the selection.'''
         if None == selection:
             selection = self.selection
         if extrasel:
             selection = AND(selection, extrasel)
+        if weight:
+            selection = product(selection, weight)
         return selection
 
     def loop(self, selection = None, extrasel = None):
@@ -766,7 +800,61 @@ class DataChain(ROOT.TChain):
 
     def __iter__(self):
         return self.loop()
+
+    def compare(self, other):
+        '''Compare with another DataChain and print differences.'''
+        for k, v in self.__dict__.items():
+            vo = other[k]
+            if vo != v:
+                print('self.{0}.{1} = {2!r}, other.{3}.{1} = {4!r}'.format(self.name, k, v, other.name, vo))
+
+    def get_functor(self, name, formula = None):
+        '''Get a TreeFormula instance with the given name and formula.'''
+        if not formula:
+            var = self.variables.get_var(name)
+            try:
+                formula = var.name
+            except AttributeError:
+                formula = name
+        return TreeFormula(name, formula, self)
+
+    def mean(self, formula, weight = None, selection = None, extrasel = None):
+        '''Get the mean of the given formula.'''
+        return tree_mean(self, formula, self.get_selection(selection, extrasel), weight)
+
+    def formula_iter(self, formula, selection = None, extrasel = None):
+        '''Iterate over the formula values.'''
+        return tree_iter(self, formula, self.get_selection(selection, extrasel))
+
+    def selection_functor(self):
+        '''Get the functor for the selection.'''
+        if self.selection:
+            return self.get_functor('selection', self.selection)
+        return lambda : 1.
+
+    def get_functor_list(self, variables):
+        '''Get a TreeFormulaList for the given variables.'''
+        _vars = []
+        for var in variables:
+            var = self.variables.get_var(var)
+            try:
+                _vars.append(var.name)
+            except AttributeError:
+                _vars.append(var)
+        return TreeFormulaList(self, *_vars)
+
+    def add_weight(self, weight):
+        '''Append a weight to the selection.'''
+        self.selection = self.get_selection(weight = weight)
+        return self.selection
         
+    def sum_of_weights(self, selection = None, extrasel = None, weight = None):
+        '''Get the sum of weights (using the selection).'''
+        selection = self.get_selection(selection = selection, extrasel = extrasel, weight = weight)
+        if not selection:
+            return self.GetEntries()
+        return sum(self.formula_iter(selection, selection = selection))
+
 class DataLibrary(object) :
     '''Contains info on datasets and functions to retrieve them.'''
 
@@ -994,25 +1082,6 @@ class DataLibrary(object) :
         data.parallel_filter(outputdir = outputdir, outputname = outputname, selection = selection,
                              nthreads = nthreads, zfill = zfill, overwrite = overwrite,
                              ignorefriends = ignorefriends, noutputfiles = noutputfiles)
-
-    def compare(self, other):
-        '''Compare with another DataChain and print differences.'''
-        for k, v in self.__dict__.items():
-            vo = other[k]
-            if vo != v:
-                print('self.{0}.{1} = {2!r}, other.{3}.{1} = {4!r}'.format(self.name, k, v, other.name, vo))
-
-    def get_functor(self, name, formula):
-        '''Get a TreeFormula instance with the given name and formula.'''
-        return TreeFormula(name, formula, self)
-
-    def mean(self, formula, weight = None, selection = None, extrasel = None):
-        '''Get the mean of the given formula.'''
-        return tree_mean(self, formula, self.get_selection(selection, extrasel), weight)
-
-    def formula_iter(self, formula, selection = None, extrasel = None):
-        '''Iterate over the formula values.'''
-        return tree_iter(self, formula, self.get_selection(selection, extrasel))
 
 class BinnedFitData(object) :
     '''Bin a RooDataSet in one or two variables and make RooDataHists of another variable in those bins.'''

@@ -37,6 +37,8 @@ def set_prefix_aliases(tree, aliases) :
         newname = branch.GetName()
         changed = False
         for name, alias in aliases.items() :
+            if name == alias:
+                continue
             if newname.startswith(name) :
                 #print name, alias, newname
                 newname = alias + newname[len(name):]
@@ -461,7 +463,7 @@ def get_event_list(tree, selection, setlist = False, listname = '') :
     event list is set to this.'''
 
     if not check_formula_compiles(selection, tree):
-        raise ValueError('Failed to compile selection {1!r} on TTree {2!r}'.format(selection, tree.GetName()))
+        raise ValueError('Failed to compile selection {0!r} on TTree {1!r}'.format(selection, tree.GetName()))
 
     if not listname :
         listname = (tree.GetName() + '_sellist_' + random_string()).replace('/', '_')
@@ -532,11 +534,14 @@ class TreeBranchAdder(object) :
         self.name = name
         self.values = array(type, [0] * maxlength)
         self.type = type
+        # Variable length, given the name of the length branch as length variable.
         if isinstance(length, str) and filllength:
             self.length = TreeBranchAdder(tree, length, function = lambda : len(self.values), type = 'i')
             self.set_length = lambda : self.length.set_value()
             self.fill_length = lambda : self.length.fill()
+        # Fixed length.
         else :
+            maxlength = max(length, maxlength)
             self.length = length
             self.set_length = lambda : True
             self.fill_length = lambda : True
