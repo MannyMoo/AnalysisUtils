@@ -2,8 +2,14 @@
 
 import ROOT, re
 
+mathfunctions = ['exp', 'log', 'sqrt', 'abs', 'pow', 'min', 'max']
+for trig in 'sin', 'cos', 'tan', 'sec':
+    mathfunctions += [trig, 'a' + trig]
+
 class StringFormula(str):
     '''Combine string variables as if they were numerical types.'''
+
+    mathfunctions = tuple(mathfunctions)
 
     def __repr__(self):
         return 'StringFormula("{0}")'.format(self)
@@ -16,7 +22,7 @@ class StringFormula(str):
 
     def named_variables(self):
         '''Get all named variables used in this formula.'''
-        return re.findall('[A-Za-z_][A-Za-z0-9_]*', self)
+        return filter(lambda name : name not in self.mathfunctions, set(re.findall('[A-Za-z_][A-Za-z0-9_]*', self)))
 
     def substitute_variables(self, recursive = True, maxdepth = 1000, **kwargs):
         '''Substitute named variables for other terms.'''

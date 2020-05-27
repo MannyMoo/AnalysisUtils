@@ -142,7 +142,7 @@ class TMVADataLoader(object) :
                     seltree, copyfriends = copy_tree(tree,
                                                      selection = cut,
                                                      keepbranches = usedleaves,
-                                                     rename = (lambda name : classname + name),
+                                                     rename = (lambda name : classname + name.replace('/', '_')),
                                                      write = True,
                                                      returnfriends = True
                                                      )
