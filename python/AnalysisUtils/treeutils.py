@@ -336,6 +336,19 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
     if fname:
         fout = ROOT.TFile.Open(fname, foption)
         write = True
+
+    # For reasons unknown, copying a TChain with friends (and more than one file) causes a crash,
+    # so make a copy of the friends list then clear the original before copying, then add them
+    # back later.
+    friendlist = tree.GetListOfFriends()
+    if friendlist:
+        # Accessing the list of friends in python adds it to the list of ROOT objects to cleanup,
+        # but it's owned by the TTree, causing a double delete. So remove it from the cleanup
+        # list.
+        friendlist.SetBit(ROOT.kMustCleanup, False)
+        friendlistcp = friendlist.Clone()
+        friendlist.Clear()
+
     # This is needed to suppress erroneous warnings about missing branches when the tree
     # is changed and SetBranchStatus is called in a TChain.
     with Silence():
@@ -356,14 +369,8 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
         treecopy.SetAlias(fromval, toval)
 
     copyfriends = []
-    if tree.GetListOfFriends() :
-        # Accessing the list of friends in python adds it to the list of ROOT objects to cleanup,
-        # but it's owned by the TTree, causing a double delete. So remove it from the cleanup
-        # list.
-        tree.GetListOfFriends().SetBit(ROOT.kMustCleanup, False)
-        treecopy.GetListOfFriends().Clear()
-        treecopy.GetListOfFriends().SetBit(ROOT.kMustCleanup, False)
-        friends = [elm.GetTree() for elm in tree.GetListOfFriends()]
+    if friendlist :
+        friends = [elm.GetTree() for elm in friendlistcp]
         for friend in friends :
             copyfriend, copyfriendfriends = \
                 copy_tree(friend,
@@ -379,6 +386,9 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
             copyfriends.append(copyfriend)
             copyfriends += copyfriendfriends
             treecopy.AddFriend(copyfriend)
+        # Add back the friends of the original tree.
+        for elm in friendlistcp:
+            friendlist.Add(elm)
 
     if write :
         treecopy.Write()
