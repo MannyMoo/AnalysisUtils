@@ -365,9 +365,6 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
 
     tree.SetBranchStatus('*', True)
 
-    for fromval, toval in get_aliases(tree).items():
-        treecopy.SetAlias(fromval, toval)
-
     copyfriends = []
     if friendlist :
         friends = [elm.GetTree() for elm in friendlistcp]
@@ -403,6 +400,9 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
         for t in [treecopy] + copyfriends:
             t.Add(fname)
             
+    for fromval, toval in get_aliases(tree).items():
+        treecopy.SetAlias(fromval, toval)
+
     if returnfriends :
         return treecopy, copyfriends
 
