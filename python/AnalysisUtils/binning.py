@@ -28,7 +28,7 @@ def roo_equal_stats_binning(nbins, dataset, variable) :
     if isinstance(variable, ROOT.TObject) :
         variable = variable.GetName()
     return equal_stats_binning(nbins, (dataset.get(i)[variable].getVal() for i in xrange(dataset.numEntries())),
-                               dataset.get(0)[variables].getMin(), dataset.get(0)[variables].getMax())
+                               dataset.get(0)[variable].getMin(), dataset.get(0)[variable].getMax())
 
 def exponential_binning(nbins, tmin, tmax, tau) :
     '''Get bins with exponentially increasing width.'''
