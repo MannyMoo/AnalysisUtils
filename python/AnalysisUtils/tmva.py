@@ -141,7 +141,8 @@ class TMVADataLoader(object) :
             pwd = ROOT.gROOT.CurrentDirectory()
             self.tmpfile = ROOT.TFile.Open(os.path.abspath('DataLoader_' + random_string() + '.root'), 'recreate')
             self.tmpfile.cd()
-            usedleaves = self.used_leaves()
+            signal_usedleaves, background_usedleaves = self.used_leaves()
+            usedleaves = {'Signal' : signal_usedleaves, 'Background' : background_usedleaves}
             addtreeargs = []
             for name in 'Signal', 'Background' :
                 lname = name.lower()
@@ -152,7 +153,7 @@ class TMVADataLoader(object) :
                     tree = getattr(self, lname + 'tree')
                     seltree, copyfriends = copy_tree(tree,
                                                      selection = cut,
-                                                     keepbranches = usedleaves,
+                                                     keepbranches = usedleaves[name],
                                                      rename = (lambda name : classname + name.replace('/', '_')),
                                                      write = True,
                                                      returnfriends = True
@@ -213,7 +214,7 @@ class TMVADataLoader(object) :
         forms += [str(varinfo.GetExpression()) for varinfo in datasetinfo.GetSpectatorInfos()]
         forms += [self.signalweight, self.backgroundweight]
         forms = filter(None, forms)
-        return TreeFormulaList(self.signaltree, *forms).used_leaves()
+        return TreeFormulaList(self.signaltree, *forms).used_leaves(), TreeFormulaList(self.backgroundtree, *forms).used_leaves()
 
     def __del__(self) :
         if hasattr(self, 'tmpfile') :
