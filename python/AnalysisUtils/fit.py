@@ -165,5 +165,38 @@ def normalised_exp_TF1(name, xmin, xmax, ncand = None, mean = None):
         expo.SetParameter(0, ncand)
     if mean != None:
         expo.SetParameter(1, mean)
+    expo.SetParName(0, 'Norm.')
+    expo.SetParName(1, '#tau')
     return expo
     
+def cp_eigenstate_time_TF1(name, scale = 1., tau = 1.519, Cf = -0.27, Sf = -0.68, 
+                           deltam = 0.5065, deltagamma = 0, adeltagamma = 0, flavour = 1):
+    '''Get a TF1 of the time PDF for a neutral meson decaying to a CP eigenstate. Defaults to
+    Bd->pipi parameter values.'''
+    form = '[0] * exp(-x/[1]) * (cosh([5] * x/2) + [6] * sinh([5] * x/2) + [7] * ([2] * cos([4]*x) - [3] * sin([4] * x)))'
+    func = ROOT.TF1(name, form)
+    for i, name in enumerate(('Scale', '#tau', 'C_{f}', 'S_{f}', '#Deltam', '#Delta#Gamma', 'A^{#Delta#Gamma}){f}', 'Flavour')):
+        func.SetParName(i, name)
+    for i, val in enumerate((scale, tau, Cf, Sf, deltam, deltagamma, adeltagamma, flavour)):
+        func.SetParameter(i, val)
+    func.FixParameter(7, flavour)
+    func.SetRange(0, 10 * tau)
+    return func
+
+def cp_eigenstate_ACP_TF1(name, tau = 1.519, Cf = -0.27, Sf = -0.68, 
+                          deltam = 0.5065, deltagamma = 0, adeltagamma = 0):
+    '''Get a TF1 of the ACP vs time for a neutral meson decaying to a CP eigenstate. Defaults to
+    Bd->pipi parameter values.'''
+    pars = dict(locals())
+    fplus = cp_eigenstate_time_TF1(**dict(pars, name = name + '_plus'))
+    fminus = cp_eigenstate_time_TF1(**dict(pars, name = name + '_minus', flavour = -1))
+    formplus = '(' + fplus.GetTitle().replace('[7]', '1.') + ')'
+    formminus = '(' + fminus.GetTitle().replace('[7]', '-1.') + ')'
+    facp = ROOT.TF1(name, '({formminus} - {formplus})/({formminus} + {formplus})'.format(**locals()))
+    facp.SetRange(0, 10*tau)
+    for i, name in enumerate(('Scale', '#tau', 'C_{f}', 'S_{f}', '#Deltam', '#Delta#Gamma', 'A^{#Delta#Gamma}){f}')):
+        facp.SetParName(i, name)
+    for i, val in enumerate((1., tau, Cf, Sf, deltam, deltagamma, adeltagamma)):
+        facp.SetParameter(i, val)    
+    facp.FixParameter(0, 1.)
+    return facp, fminus, fplus
