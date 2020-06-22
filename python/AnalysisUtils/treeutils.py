@@ -3,6 +3,7 @@
 import ROOT, pprint, re, random, string
 from array import array
 from AnalysisUtils.stringformula import NamedFormula, StringFormula
+from AnalysisUtils.Silence import Silence
 
 def random_string(n = 6, chars = string.ascii_uppercase + string.ascii_lowercase) :
     '''Generate a random string of length n.'''
@@ -313,29 +314,48 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
     # Need to use an EventList rather than passing the string to TTree::CopyTree
     # so that we can copy friend trees that don't contain all the required
     # branches for the selection.
-    if selection and isinstance(selection, str) :
-        selection = get_event_list(tree, selection)
-        selection.SetDirectory(None)
-    if selection :
+    if selection:
+        if isinstance(selection, str) :
+            selection = get_event_list(tree, selection)
+            selection.SetDirectory(None)
         prevlist = tree.GetEventList()
         tree.SetEventList(selection)
 
     if keepbranches :
-        for branch in tree.GetListOfBranches() :
-            if not any(re.search(pattern, branch.GetName()) for pattern in keepbranches) :
-                branch.SetStatus(False)
+        tree.SetBranchStatus('*', False)
+        # Have to pass the 'found' pointer otherwise it gives a warning, cause in the
+        # first pass SetBranchStatus only checks branches that are already enabled.
+        # It still gives a warning when the TTree is changed though, which is annoying.
+        found = array('I', [0])
+        for br in keepbranches:
+            tree.SetBranchStatus(br, True, found)
     if removebranches :
-        for branch in tree.GetListOfBranches() :
-            if any(re.search(pattern, branch.GetName()) for pattern in removebranches) :
-                branch.SetStatus(False)
+        for br in removebranches:
+            tree.SetBranchStatus(br, False)
     
     if fname:
         fout = ROOT.TFile.Open(fname, foption)
         write = True
-    if nentries > 0 :
-        treecopy = tree.CopyTree('', '', int(nentries))
-    else :
-        treecopy = tree.CopyTree('')
+
+    # For reasons unknown, copying a TChain with friends (and more than one file) causes a crash,
+    # so make a copy of the friends list then clear the original before copying, then add them
+    # back later.
+    friendlist = tree.GetListOfFriends()
+    if friendlist:
+        # Accessing the list of friends in python adds it to the list of ROOT objects to cleanup,
+        # but it's owned by the TTree, causing a double delete. So remove it from the cleanup
+        # list.
+        friendlist.SetBit(ROOT.kMustCleanup, False)
+        friendlistcp = friendlist.Clone()
+        friendlist.Clear()
+
+    # This is needed to suppress erroneous warnings about missing branches when the tree
+    # is changed and SetBranchStatus is called in a TChain.
+    with Silence():
+        if nentries > 0 :
+            treecopy = tree.CopyTree('', '', int(nentries))
+        else :
+            treecopy = tree.CopyTree('')
 
     if rename :
         treecopy.SetName(rename(tree.GetName()))
@@ -345,17 +365,9 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
 
     tree.SetBranchStatus('*', True)
 
-    for fromval, toval in get_aliases(tree).items():
-        treecopy.SetAlias(fromval, toval)
-
     copyfriends = []
-    if tree.GetListOfFriends() :
-        # Accessing the list of friends in python adds it to the list of ROOT objects to cleanup,
-        # but it's owned by the TTree, causing a double delete. So remove it from the cleanup
-        # list.
-        treecopy.GetListOfFriends().Clear()
-        treecopy.GetListOfFriends().SetBit(ROOT.kMustCleanup, False)
-        friends = [elm.GetTree() for elm in tree.GetListOfFriends()]
+    if friendlist :
+        friends = [elm.GetTree() for elm in friendlistcp]
         for friend in friends :
             copyfriend, copyfriendfriends = \
                 copy_tree(friend,
@@ -371,6 +383,9 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
             copyfriends.append(copyfriend)
             copyfriends += copyfriendfriends
             treecopy.AddFriend(copyfriend)
+        # Add back the friends of the original tree.
+        for elm in friendlistcp:
+            friendlist.Add(elm)
 
     if write :
         treecopy.Write()
@@ -385,6 +400,9 @@ def copy_tree(tree, selection = '', nentries = -1, keepbranches = (),
         for t in [treecopy] + copyfriends:
             t.Add(fname)
             
+    for fromval, toval in get_aliases(tree).items():
+        treecopy.SetAlias(fromval, toval)
+
     if returnfriends :
         return treecopy, copyfriends
 

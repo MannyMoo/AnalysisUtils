@@ -56,7 +56,7 @@ class TMVADataLoader(object) :
                  signalcut = '', backgroundcut = '',
                  signalglobalweight = 1., backgroundglobalweight = 1.,
                  name = 'dataset', splitoptions = None, trainingcut = '',
-                 testingcut = '') :
+                 testingcut = '', prepare = False) :
         '''signaltree : the signal TTree.
         backgroundtree : the background TTree.
         variables : list of training variables. These can just be the variable expressions as strings, or
@@ -84,11 +84,22 @@ class TMVADataLoader(object) :
             trainingcut = NOT(testingcut)
 
         for attr, val in locals().items() :
-            if attr == 'self' :
+            if attr in ('self', 'prepare') :
                 continue
             setattr(self, attr, val)
 
-        self._make_dataloader()
+        self.dataloader = None
+        self.prepared = False
+        if prepare:
+            self.prepare()
+
+    def prepare(self):
+        '''Make the TMVA.DataLoader instance.'''
+        if self.prepared:
+            return True
+        returnval = self._make_dataloader()
+        self.prepared = True
+        return returnval
 
     @staticmethod
     def default_split_options(*args, **kwargs) :
@@ -135,14 +146,14 @@ class TMVADataLoader(object) :
             for name in 'Signal', 'Background' :
                 lname = name.lower()
                 namecut = getattr(self, lname + 'cut')
-                for ttype, cut in (TMVA.Types.kTraining, self.trainingcut), (TMVA.Types.kTesting, self.testingcut) :
-                    classname = name + '_' + str(ttype) + '_'
+                for tname, ttype, cut in ('Training', TMVA.Types.kTraining, self.trainingcut), ('Testing', TMVA.Types.kTesting, self.testingcut) :
+                    classname = self.name + '_' + name + '_' + tname + '_'
                     cut = AND(*filter(None, [namecut, cut]))
                     tree = getattr(self, lname + 'tree')
                     seltree, copyfriends = copy_tree(tree,
                                                      selection = cut,
                                                      keepbranches = usedleaves,
-                                                     rename = (lambda name : classname + name),
+                                                     rename = (lambda name : classname + name.replace('/', '_')),
                                                      write = True,
                                                      returnfriends = True
                                                      )
@@ -174,6 +185,7 @@ class TMVADataLoader(object) :
             # Prepare the training.
             self.dataloader.PrepareTrainingAndTestTree(ROOT.TCut(self.signalcut), ROOT.TCut(self.backgroundcut),
                                                   str(self.splitoptions))
+        return True
 
     def get_cut_range_opts(self) :
         '''Get the options for cut ranges, so they stay within the range of the data.'''
@@ -314,6 +326,10 @@ class TMVAClassifier(object) :
                 continue
             setattr(self, attr, val)
 
+    def prepare(self):
+        '''Prepare the DataLoader.'''
+        return self.dataloader.prepare()
+
     @staticmethod
     def default_factory_options(*args, **kwargs) :
         '''Get the default TMVAFactory options, optionally updating them with the given args.'''
@@ -383,6 +399,9 @@ class TMVAClassifier(object) :
 
     def train_factory(self, outputfile) :
         '''Train using TMVA::Factory.'''
+
+        # Make the DataLoader.
+        self.prepare()
 
         # Make the factory.
         factory = TMVA.Factory(self.name, outputfile, 
@@ -472,18 +491,23 @@ class KFoldClassifier(object) :
                             nTrain_Background=0)
         self.classifierkwargs = dict(classifierkwargs)
         self.testingcuts = tuple(testingcuts)
+
         classifiers = []
+        dataname = self.datakwargs.get('name', 'dataset')
+        weightsdir = classifierkwargs.get('weightsdir', '.')
+        zfill = len(str(len(self.testingcuts)-1))
         for i, cut in enumerate(self.testingcuts) :
+            istr = str(i).zfill(zfill)
             opts = {'testingcut' : cut}
 
             datakwargs = dict(self.datakwargs)
             datakwargs['testingcut'] = cut
+            datakwargs['name'] = dataname + '_fold_' + istr
+            datakwargs['prepare'] = False
             data = TMVADataLoader(**datakwargs)
 
             classifierkwargs = dict(self.classifierkwargs)
-            weightsdir = classifierkwargs.get('weightsdir', '')
-            weightsdir = '_'.join(filter(None, [weightsdir, 'fold', str(i)]))
-            classifierkwargs['weightsdir'] = weightsdir
+            classifierkwargs['weightsdir'] = os.path.join(weightsdir, 'fold_' + istr)
             classifierkwargs['dataloader'] = data
             opts['classifier'] = TMVAClassifier(**classifierkwargs)
 
