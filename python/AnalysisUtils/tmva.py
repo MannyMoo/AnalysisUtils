@@ -1,7 +1,7 @@
 import ROOT, os
 from ROOT import TMVA
 from AnalysisUtils.treeutils import tree_iter, random_string, copy_tree, TreeBranchAdder, TreeFormula, tree_loop, \
-    TreeFormulaList
+    TreeFormulaList, get_aliases
 from AnalysisUtils.selection import AND, NOT
 from AnalysisUtils.addmva import MVACalc
 
@@ -141,7 +141,9 @@ class TMVADataLoader(object) :
             pwd = ROOT.gROOT.CurrentDirectory()
             self.tmpfile = ROOT.TFile.Open(os.path.abspath('DataLoader_' + random_string() + '.root'), 'recreate')
             self.tmpfile.cd()
-            usedleaves = self.used_leaves()
+            signal_usedleaves, background_usedleaves = self.used_leaves()
+            usedleaves = {'Signal' : signal_usedleaves, 'Background' : background_usedleaves}
+            aliases = {'Signal' : get_aliases(self.signaltree), 'Background' : get_aliases(self.backgroundtree)}
             addtreeargs = []
             for name in 'Signal', 'Background' :
                 lname = name.lower()
@@ -152,7 +154,7 @@ class TMVADataLoader(object) :
                     tree = getattr(self, lname + 'tree')
                     seltree, copyfriends = copy_tree(tree,
                                                      selection = cut,
-                                                     keepbranches = usedleaves,
+                                                     keepbranches = usedleaves[name],
                                                      rename = (lambda name : classname + name.replace('/', '_')),
                                                      write = True,
                                                      returnfriends = True
@@ -167,7 +169,11 @@ class TMVADataLoader(object) :
             self.tmpfile.Close()
             self.tmpfile = ROOT.TFile.Open(fname)
             for args in addtreeargs :
-                self.dataloader.AddTree(self.tmpfile.Get(args[0]), *args[1:])
+                tree = self.tmpfile.Get(args[0])
+                _aliases = aliases['Signal'] if 'Signal' in args else aliases['Background']
+                for name, alias in _aliases.items():
+                    tree.SetAlias(name, alias)
+                self.dataloader.AddTree(tree, *args[1:])
             self.dataloader.GetDataSetInfo().SetSplitOptions(str(self.splitoptions))
             if pwd :
                 pwd.cd()
@@ -213,7 +219,7 @@ class TMVADataLoader(object) :
         forms += [str(varinfo.GetExpression()) for varinfo in datasetinfo.GetSpectatorInfos()]
         forms += [self.signalweight, self.backgroundweight]
         forms = filter(None, forms)
-        return TreeFormulaList(self.signaltree, *forms).used_leaves()
+        return TreeFormulaList(self.signaltree, *forms).used_leaves(), TreeFormulaList(self.backgroundtree, *forms).used_leaves()
 
     def __del__(self) :
         if hasattr(self, 'tmpfile') :
