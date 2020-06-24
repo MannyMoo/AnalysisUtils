@@ -346,13 +346,13 @@ class DataChain(ROOT.TChain):
         if varZ:
             h = self.variables.histo3D(var, varY, varZ, name = name, nbins = nbins, nbinsY = nbinsY,
                                        nbinsZ = nbinsZ, suffix = suffix)
-            self.Draw('{3} : {2} : {1} >> {0}'.format(h.GetName(), var.name, varY.name, varZ.name), selection, opt)
+            self.Draw('{3} : {2} : {1} >> {0}'.format(h.GetName(), var.formula, varY.formula, varZ.formula), selection, opt)
         if varY:
             h = self.variables.histo2D(var, varY, name = name, nbins = nbins, nbinsY = nbinsY, suffix = suffix)
-            self.Draw('{2} : {1} >> {0}'.format(h.GetName(), var.name, varY.name), selection, opt)
+            self.Draw('{2} : {1} >> {0}'.format(h.GetName(), var.formula, varY.formula), selection, opt)
         else:
             h = self.variables.histo(var, name = name, nbins = nbins, suffix = suffix)
-            self.Draw('{1} >> {0}'.format(h.GetName(), var.name), selection, opt)
+            self.Draw('{1} >> {0}'.format(h.GetName(), var.formula), selection, opt)
         h.SetDirectory(None)
         return h
 
